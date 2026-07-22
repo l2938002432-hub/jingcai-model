@@ -14,11 +14,16 @@
 $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -v
 python -m jingcai status
+python -m jingcai fetch-today
 python -m jingcai demo-report --output reports\demo.html
 python -m jingcai predict --csv path\to\league.csv --season 2025-26 --home "Home" --away "Away" --output reports\prediction.html
 python -m jingcai serve --directory reports
 python -m jingcai daily-paper --csv path\to\league.csv --season 2025-26 --fixtures-json config\daily-fixtures.example.json --output reports\daily-paper.html
 ```
+
+`fetch-today` 低频读取中国体育彩票移动端计算器使用的公开数据接口，保存原始快照与规范化五玩法数据。数据源无公开稳定性承诺；接口异常、字段变化或数据过期时必须停止推荐并退回人工导入。海外云机房可能被地域/WAF限制，自动任务优先运行在国内网络或国内云节点。
+
+实时竞彩采集与字段解析参考 MIT 项目 [Johnserf-Seed/SportteryAPI](https://github.com/Johnserf-Seed/SportteryAPI)，项目内实现为独立 Python 提供器。
 
 完整设计见 `docs/superpowers/specs/2026-07-22-jingcai-prediction-system-design.md`，实施计划见 `docs/superpowers/plans/2026-07-22-jingcai-implementation-plan.md`。
 

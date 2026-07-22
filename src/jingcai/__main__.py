@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from jingcai import __version__
 from jingcai.pipeline import build_paper_candidates, predict_all_markets, walk_forward_1x2
 from jingcai.providers.football_data import load_football_data_csv
+from jingcai.providers.sporttery import fetch_sporttery_payload, normalize_payload, save_snapshot
 from jingcai.reporting import render_daily_report, render_probability_report, write_report
 
 
@@ -18,6 +19,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="jingcai", description="竞彩概率研究工具")
     parser.add_argument("--version", action="version", version=__version__)
     subparsers = parser.add_subparsers(dest="command", required=True)
+    fetch = subparsers.add_parser("fetch-today", help="读取当天官方竞彩五玩法数据")
+    fetch.add_argument("--output", default="data/snapshots/sporttery-latest.json")
+    fetch.add_argument("--normalized-output", default="data/snapshots/fixtures-latest.json")
     subparsers.add_parser("status", help="显示当前发布状态")
     demo = subparsers.add_parser("demo-report", help="生成不含真实推荐的示例报告")
     demo.add_argument("--output", default="reports/demo.html")
@@ -72,6 +76,18 @@ def _load_history(args: argparse.Namespace) -> list[dict[str, object]]:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "fetch-today":
+        payload = fetch_sporttery_payload()
+        raw_path = save_snapshot(payload, args.output)
+        fixtures = normalize_payload(payload)
+        normalized = Path(args.normalized_output)
+        normalized.parent.mkdir(parents=True, exist_ok=True)
+        normalized.write_text(json.dumps(fixtures, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(json.dumps({
+            "raw": str(raw_path.resolve()), "normalized": str(normalized.resolve()),
+            "matches": len(fixtures), "last_update": payload["value"].get("lastUpdateTime"),
+        }, ensure_ascii=False))
+        return 0
     if args.command == "status":
         print(json.dumps({"version": __version__, "state": "RESEARCH"}, ensure_ascii=False))
         return 0

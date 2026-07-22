@@ -104,6 +104,17 @@ class PipelineTests(unittest.TestCase):
                 synthetic_matches(), [future], prediction_time=datetime(2026, 7, 22, 11, tzinfo=UTC)
             )
 
+    def test_unknown_teams_never_generate_recommendations(self) -> None:
+        fixture = {
+            "match_id": "m2", "home_team": "UNKNOWN", "away_team": "B",
+            "odds_as_of": "2026-07-22T10:00:00+00:00",
+            "sale_cutoff": "2026-07-22T12:00:00+00:00",
+            "odds": {"match_result": {"home": 10.0, "draw": 10.0, "away": 10.0}},
+        }
+        self.assertEqual([], build_paper_candidates(
+            synthetic_matches(), [fixture], prediction_time=datetime(2026, 7, 22, 11, tzinfo=UTC)
+        ))
+
 
 if __name__ == "__main__":
     unittest.main()

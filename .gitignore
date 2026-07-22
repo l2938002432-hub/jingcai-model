@@ -15,3 +15,5 @@ artifacts/
 mlruns/
 .worktrees/
 reports/
+.npm-cache/
+data/snapshots/

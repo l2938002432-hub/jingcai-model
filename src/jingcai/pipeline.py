@@ -113,8 +113,13 @@ def build_paper_candidates(
     as_of = prediction_time or datetime.now(UTC)
     if as_of.tzinfo is None:
         raise ValueError("prediction_time must be timezone-aware")
+    trained_teams = {
+        str(row[field]) for row in history for field in ("home_team", "away_team")
+    }
     candidates: list[dict[str, Any]] = []
     for fixture in fixtures:
+        if str(fixture["home_team"]) not in trained_teams or str(fixture["away_team"]) not in trained_teams:
+            continue
         cutoff = datetime.fromisoformat(str(fixture["sale_cutoff"]))
         odds_as_of = datetime.fromisoformat(str(fixture["odds_as_of"]))
         if cutoff.tzinfo is None or odds_as_of.tzinfo is None:
