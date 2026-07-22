@@ -7,5 +7,6 @@
   "Sao Paulo": ["圣保罗"], "Athletico-PR": ["巴竞技"],
   "Corinthians": ["科林蒂安"], "Remo": ["里莫"],
   "Botafogo RJ": ["博塔弗戈"], "Vitoria": ["维多利亚"],
-  "Omonia Nicosia": ["奥莫尼亚"], "Kairat Almaty": ["阿拉木图"]
+  "Omonia Nicosia": ["奥莫尼亚", "Omonia Nikosia"],
+  "Kairat Almaty": ["阿拉木图", "FK Kairat"]
 }
