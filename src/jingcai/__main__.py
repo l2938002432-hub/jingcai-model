@@ -9,8 +9,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jingcai import __version__
+from jingcai.daily import DailyLiveError, build_live_candidates, canonicalize_teams, parse_official_update
 from jingcai.pipeline import build_paper_candidates, predict_all_markets, walk_forward_1x2
 from jingcai.providers.football_data import load_football_data_csv
+from jingcai.providers.club_history import load_club_history_csv
 from jingcai.providers.sporttery import fetch_sporttery_payload, normalize_payload, save_snapshot
 from jingcai.reporting import render_daily_report, render_probability_report, write_report
 
@@ -43,6 +45,16 @@ def build_parser() -> argparse.ArgumentParser:
     daily.add_argument("--fixtures-json", required=True)
     daily.add_argument("--safety-margin", type=float, default=0.03)
     daily.add_argument("--output", default="reports/daily-paper.html")
+    live = subparsers.add_parser("daily-live", help="获取官方数据并生成严格校验的实时 HTML 日报")
+    _add_history_args(live)
+    live.add_argument("--snapshot-json", help="使用已保存的官方原始快照，不联网")
+    live.add_argument("--club-history-csv", help="MIT 多联赛冷启动历史 CSV")
+    live.add_argument("--history-divisions", default="BRA,NOR,USA", help="冷启动联赛代码，逗号分隔")
+    live.add_argument("--aliases-json", default="config/team-aliases.json")
+    live.add_argument("--save-snapshot", default="data/snapshots/sporttery-latest.json")
+    live.add_argument("--max-age-minutes", type=int, default=30)
+    live.add_argument("--safety-margin", type=float, default=0.03)
+    live.add_argument("--output", default="reports/daily-live.html")
     return parser
 
 
@@ -155,6 +167,41 @@ def main(argv: list[str] | None = None) -> int:
         )
         output = write_report(args.output, report)
         print(json.dumps({"output": str(output.resolve()), "candidates": len(candidates)}, ensure_ascii=False))
+        return 0
+    if args.command == "daily-live":
+        now = datetime.now(UTC)
+        if args.snapshot_json:
+            payload = json.loads(Path(args.snapshot_json).read_text(encoding="utf-8"))
+        else:
+            payload = fetch_sporttery_payload()
+            save_snapshot(payload, args.save_snapshot)
+        try:
+            source_as_of = parse_official_update(payload)
+            fixtures = normalize_payload(payload, fetched_at=source_as_of)
+            history = _load_history(args)
+            if args.club_history_csv:
+                divisions = {item.strip() for item in args.history_divisions.split(",") if item.strip()}
+                history.extend(load_club_history_csv(
+                    args.club_history_csv, divisions=divisions, since="2018-01-01"
+                ))
+            aliases = json.loads(Path(args.aliases_json).read_text(encoding="utf-8"))
+            history, fixtures = canonicalize_teams(history, fixtures, aliases)
+            candidates = build_live_candidates(
+                history, fixtures, source_as_of=source_as_of, now=now,
+                max_age_minutes=args.max_age_minutes, safety_margin=args.safety_margin,
+            )
+        except DailyLiveError as exc:
+            raise SystemExit(f"daily-live 安全拒绝: {exc}") from exc
+        report = render_daily_report(
+            generated_at=now, model_state="PAPER_ONLY", candidates=candidates,
+            data_fresh=True, source_as_of=source_as_of,
+        )
+        output = write_report(args.output, report)
+        print(json.dumps({
+            "output": str(output.resolve()), "fixtures": len(fixtures),
+            "candidates": len(candidates), "source_as_of": source_as_of.isoformat(),
+            "cutoff_notice": "sale_cutoff_estimated=true 表示停售时间为开赛前10分钟估算值",
+        }, ensure_ascii=False))
         return 0
     return 2
 

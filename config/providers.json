@@ -1,10 +1,23 @@
 {
   "sporttery": {
     "purpose": "official fixtures, sale status, odds and results",
-    "production_status": "manual_import_only_until_terms_reviewed",
+    "production_status": "low_frequency_public_calculator_with_fail_closed",
     "terms_url": "https://www.sporttery.cn/",
     "max_requests_per_minute": 2,
     "public_redistribution": false
+  },
+  "club_history_github": {
+    "purpose": "multi-league cold-start historical training",
+    "production_status": "research_snapshot",
+    "source_url": "https://github.com/xgabora/Club-Football-Match-Data-2000-2025",
+    "license": "MIT",
+    "public_redistribution": false
+  },
+  "openfootball": {
+    "purpose": "season and European competition result increments",
+    "production_status": "planned",
+    "source_url": "https://github.com/openfootball",
+    "license": "CC0"
   },
   "football_data_co_uk": {
     "purpose": "offline historical training and probability validation",
@@ -19,4 +32,3 @@
     "attribution_required": true
   }
 }
-

@@ -79,20 +79,24 @@ def _odds(raw: object, keys: Mapping[str, str]) -> dict[str, float]:
 
 def _score_keys() -> dict[str, str]:
     keys = {f"s{h:02d}s{a:02d}": f"{h}:{a}" for h in range(6) for a in range(6)}
-    keys.update({"s1sh": "home_other", "s1sd": "draw_other", "s1sa": "away_other"})
+    keys.update({"s1sh": "other_home", "s1sd": "other_draw", "s1sa": "other_away"})
     return keys
 
 
-def normalize_payload(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
+def normalize_payload(
+    payload: Mapping[str, Any], *, fetched_at: datetime | None = None
+) -> list[dict[str, Any]]:
     """Convert all selling matches and five pools to the pipeline fixture contract."""
     validate_payload(payload)
-    fetched_at = datetime.now(UTC)
+    fetched_at = fetched_at or datetime.now(UTC)
+    if fetched_at.tzinfo is None:
+        raise SportteryError("fetched_at must be timezone-aware")
     result_keys = {"h": "home", "d": "draw", "a": "away"}
     total_keys = {f"s{i}": str(i) for i in range(7)} | {"s7": "7+"}
     half_full_keys = {
-        "hh": "home_home", "hd": "home_draw", "ha": "home_away",
-        "dh": "draw_home", "dd": "draw_draw", "da": "draw_away",
-        "ah": "away_home", "ad": "away_draw", "aa": "away_away",
+        "hh": "HH", "hd": "HD", "ha": "HA",
+        "dh": "DH", "dd": "DD", "da": "DA",
+        "ah": "AH", "ad": "AD", "aa": "AA",
     }
     fixtures = []
     for group in payload["value"]["matchInfoList"]:

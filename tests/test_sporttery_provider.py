@@ -19,6 +19,7 @@ class SportteryProviderTests(unittest.TestCase):
         row = normalize_payload(payload)[0]
         self.assertEqual(-1, row["handicap"])
         self.assertEqual({"match_result", "handicap_result", "correct_score", "total_goals", "half_full"}, set(row["odds"]))
+        self.assertIn("other_home", row["odds"]["correct_score"])
         self.assertTrue(row["sale_cutoff_estimated"])
 
     def test_rejects_unexpected_payload(self) -> None:

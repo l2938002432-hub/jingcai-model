@@ -1,7 +1,9 @@
 import json
+import os
 import unittest
+from unittest.mock import patch
 
-from jingcai.notifications import send_feishu, send_wecom
+from jingcai.notifications import send_configured, send_feishu, send_wecom
 
 
 class FakeResponse:
@@ -12,6 +14,9 @@ class FakeResponse:
 
     def __exit__(self, *args):
         return False
+
+    def read(self):
+        return b'{"code": 0}'
 
 
 class NotificationTests(unittest.TestCase):
@@ -38,6 +43,23 @@ class NotificationTests(unittest.TestCase):
             return FakeResponse()
 
         self.assertEqual("wecom", send_wecom("https://example.invalid", "日报", "内容", sender).channel)
+
+    def test_platform_error_is_not_treated_as_success(self) -> None:
+        class RejectedResponse(FakeResponse):
+            def read(self):
+                return b'{"errcode": 40001}'
+
+        with self.assertRaises(RuntimeError):
+            send_wecom(
+                "https://example.invalid",
+                "日报",
+                "内容",
+                lambda *_args, **_kwargs: RejectedResponse(),
+            )
+
+    def test_send_configured_skips_absent_channels(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual([], send_configured("日报", "内容"))
 
 
 if __name__ == "__main__":

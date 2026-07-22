@@ -161,6 +161,7 @@ def build_paper_candidates(
                     "safety_margin": safety_margin,
                     "odds_as_of": odds_as_of.isoformat(),
                     "sale_cutoff": cutoff.isoformat(),
+                    "sale_cutoff_estimated": bool(fixture.get("sale_cutoff_estimated", False)),
                 }
                 if best is None or item["conservative_ev"] > best["conservative_ev"]:
                     best = item

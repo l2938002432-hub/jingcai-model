@@ -45,6 +45,17 @@ class ReportingTests(unittest.TestCase):
             self.assertIn(title, report)
         self.assertIn("不构成正式投注建议", report)
 
+    def test_estimated_cutoff_is_explicit(self) -> None:
+        report = render_daily_report(
+            generated_at=datetime(2026, 7, 22, tzinfo=UTC), model_state="LIMITED_LIVE",
+            data_fresh=True, candidates=[{
+                "label": "A-B", "play": "主胜", "probability": 0.6,
+                "conservative_ev": 0.1, "sale_cutoff": "2026-07-22T12:00:00+08:00",
+                "sale_cutoff_estimated": True,
+            }],
+        )
+        self.assertIn("估算，非官方停售时间", report)
+
 
 if __name__ == "__main__":
     unittest.main()
