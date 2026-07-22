@@ -71,6 +71,15 @@ def _team(match: Mapping[str, Any], side: str) -> str:
     raise UefaError(f"missing {side} team")
 
 
+def _association(match: Mapping[str, Any], side: str) -> str:
+    value = match.get(f"{side}Team")
+    if isinstance(value, Mapping):
+        code = value.get("countryCode")
+        if code:
+            return str(code).strip().upper()
+    raise UefaError(f"missing {side} association")
+
+
 def _kickoff(match: Mapping[str, Any]) -> datetime:
     raw = match.get("kickOffTime")
     if isinstance(raw, Mapping):
@@ -130,6 +139,8 @@ def normalize_match(
         "kickoff_date": kickoff.date().isoformat(),
         "home_team": _team(match, "home"),
         "away_team": _team(match, "away"),
+        "home_association": _association(match, "home"),
+        "away_association": _association(match, "away"),
         "home_goals": home_goals,
         "away_goals": away_goals,
         "round": _label(match.get("round")),

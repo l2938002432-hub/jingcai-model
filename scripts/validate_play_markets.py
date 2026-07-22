@@ -5,7 +5,7 @@ import json
 from dataclasses import asdict
 
 from jingcai.market_validation import validate_markets
-from jingcai.models import DixonColesModel
+from jingcai.models import DixonColesModel, HalfFullModel
 from jingcai.models.poisson import field
 from jingcai.providers.club_history import load_club_history_csv
 
@@ -40,6 +40,10 @@ def main() -> int:
         forecast["score_matrix"] = _matrix(
             model, str(test["home_team"]), str(test["away_team"])
         )
+        if test.get("half_home_goals") is not None and test.get("half_away_goals") is not None:
+            forecast["half_full_probabilities"] = HalfFullModel(model).predict_proba(
+                str(test["home_team"]), str(test["away_team"])
+            )
         forecasts.append(forecast)
     results = validate_markets(forecasts, baseline_history=rows[:split])
     print(json.dumps({name: asdict(value) for name, value in results.items()}, ensure_ascii=False, indent=2))

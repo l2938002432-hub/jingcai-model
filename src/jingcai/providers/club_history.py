@@ -63,4 +63,30 @@ def load_club_history_csv(
                 # Retain the source text so downstream integrity checks can
                 # detect ambiguous numeric dates instead of silently guessing.
                 "source_match_date": row["MatchDate"].strip(),
+                **_optional_numeric_fields(row, index),
             }
+
+
+def _optional_numeric_fields(row: dict[str, str], index: int) -> dict[str, object]:
+    """Keep useful pre-match/half-time fields only when the source supplies them."""
+    output: dict[str, object] = {}
+    for source, target, integer in (
+        ("HTHome", "half_home_goals", True),
+        ("HTAway", "half_away_goals", True),
+        ("HomeElo", "home_elo", False),
+        ("AwayElo", "away_elo", False),
+    ):
+        raw = (row.get(source) or "").strip()
+        if not raw:
+            continue
+        try:
+            value = float(raw)
+        except ValueError as exc:
+            raise ClubHistoryError(f"row {index}: invalid optional field {source}") from exc
+        if integer:
+            if value < 0 or not value.is_integer():
+                raise ClubHistoryError(f"row {index}: invalid optional field {source}")
+            output[target] = int(value)
+        else:
+            output[target] = value
+    return output

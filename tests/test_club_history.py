@@ -37,6 +37,18 @@ class ClubHistoryTests(unittest.TestCase):
             rows = list(load_club_history_csv(path, divisions={"BRA"}))
             self.assertEqual(["C"], [row["home_team"] for row in rows])
 
+    def test_preserves_half_time_labels_and_pre_match_elo_when_available(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "matches.csv"
+            path.write_text(
+                "Division,MatchDate,MatchTime,HomeTeam,AwayTeam,FTHome,FTAway,HTHome,HTAway,HomeElo,AwayElo\n"
+                "BRA,2026-07-20,20:00:00,A,B,2,1,1,0,1512.5,1490\n",
+                encoding="utf-8",
+            )
+            row = list(load_club_history_csv(path))[0]
+            self.assertEqual((1, 0), (row["half_home_goals"], row["half_away_goals"]))
+            self.assertEqual((1512.5, 1490.0), (row["home_elo"], row["away_elo"]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,7 +18,11 @@
   },
   "UCL": {
     "history_division": null,
-    "approved": false,
-    "reason": "UEFA官方782场资格赛已接入；直接模型锁箱未通过，等待跨联赛实力先验"
+    "approved": true,
+    "validated": true,
+    "production_ready": true,
+    "markets": {"match_result": true},
+    "market_validation": {"match_result_log_loss_improvement": 0.01255, "brier_improvement": 0.01506, "lockbox_matches": 179},
+    "reason": "跨联赛Club Elo已通过锁箱并接入每日生产；当前仅批准胜平负"
   }
 }

@@ -4,16 +4,21 @@ import argparse
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jingcai import __version__
-from jingcai.daily import DailyLiveError, build_live_candidates, canonicalize_teams, parse_official_update
-from jingcai.pipeline import build_paper_candidates, predict_all_markets, walk_forward_1x2
+from jingcai.daily import DailyLiveError, canonicalize_teams, parse_official_update, validate_freshness
+from jingcai.identity import TeamAliases
+from jingcai.markets import OFFICIAL_CORRECT_SCORES, correct_score, result_1x2, total_goals
+from jingcai.models import ClubEloModel, HalfFullModel
+from jingcai.pipeline import build_paper_candidates, matrix_mapping, predict_all_markets, walk_forward_1x2
+from jingcai.providers.club_elo_history import ClubEloHistory, ClubEloHistoryError
 from jingcai.providers.football_data import load_football_data_csv
 from jingcai.providers.club_history import load_club_history_csv
 from jingcai.providers.sporttery import fetch_sporttery_payload, normalize_payload, save_snapshot
+from jingcai.providers.uefa import UefaError, normalize_match
 from jingcai.reporting import render_daily_report, render_probability_report, write_report
 
 
@@ -50,6 +55,8 @@ def build_parser() -> argparse.ArgumentParser:
     live.add_argument("--snapshot-json", help="使用已保存的官方原始快照，不联网")
     live.add_argument("--club-history-csv", help="MIT 多联赛冷启动历史 CSV")
     live.add_argument("--history-divisions", default="BRA,NOR,USA", help="冷启动联赛代码，逗号分隔")
+    live.add_argument("--club-elo-csv", help="ClubElo historical snapshots CSV (UCL only)")
+    live.add_argument("--uefa-history-dir", help="UEFA qualifying history JSON directory (UCL only)")
     live.add_argument("--aliases-json", default="config/team-aliases.json")
     live.add_argument("--acceptance-json", default="config/model-acceptance.json")
     live.add_argument("--save-snapshot", default="data/snapshots/sporttery-latest.json")
@@ -85,6 +92,75 @@ def _load_history(args: argparse.Namespace) -> list[dict[str, object]]:
             source_timezone=source_timezone,
         )
     )
+
+
+def _load_uefa_history(directory: str | Path, aliases: TeamAliases) -> list[dict[str, object]]:
+    root = Path(directory)
+    files = sorted(root.glob("*.json")) if root.is_dir() else []
+    if not files:
+        raise DailyLiveError("UCL is enabled but the UEFA history directory has no JSON files")
+    rows: list[dict[str, object]] = []
+    for path in files:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise DailyLiveError(f"cannot read UEFA history: {path.name}") from exc
+        items = payload.get("matches") if isinstance(payload, dict) else payload
+        if not isinstance(items, list):
+            raise DailyLiveError(f"invalid UEFA history schema: {path.name}")
+        fetched_at = datetime.fromtimestamp(path.stat().st_mtime, UTC)
+        for item in items:
+            if not isinstance(item, dict):
+                raise DailyLiveError(f"non-object UEFA history record: {path.name}")
+            phase = item.get("competitionPhase")
+            if isinstance(phase, dict):
+                phase = phase.get("code") or phase.get("type") or phase.get("name")
+            if str(phase or "").upper() != "QUALIFYING":
+                continue
+            try:
+                row = normalize_match(item, source_url=path.resolve().as_uri(), fetched_at=fetched_at)
+            except UefaError as exc:
+                raise DailyLiveError(f"invalid UEFA qualifying record in {path.name}: {exc}") from exc
+            row["home_team"] = aliases.canonical(str(row["home_team"]))
+            row["away_team"] = aliases.canonical(str(row["away_team"]))
+            rows.append(row)
+    if not rows:
+        raise DailyLiveError("UEFA history has no completed qualifying matches")
+    return rows
+
+
+def _build_ucl_predictor(club_elo_csv: str, uefa_history_dir: str, aliases: TeamAliases):
+    try:
+        elo_history = ClubEloHistory.from_csv(club_elo_csv, aliases)
+        matches = _load_uefa_history(uefa_history_dir, aliases)
+
+        def prior(match, team, association):
+            try:
+                return elo_history.prior_provider(match, team, association)
+            except ClubEloHistoryError:
+                return 1300.0
+
+        model = ClubEloModel(default_rating=1300.0).fit(matches, prior)
+    except (OSError, ClubEloHistoryError, ValueError) as exc:
+        raise DailyLiveError(f"invalid UCL ClubElo inputs: {exc}") from exc
+
+    def predict(fixture):
+        if str(fixture.get("competition_code", "")) != "UCL":
+            return None
+        home, away = str(fixture["home_team"]), str(fixture["away_team"])
+        context = {
+            "home_association": "__FALLBACK__", "away_association": "__FALLBACK__",
+            "association_priors": {"__FALLBACK__": 1300.0},
+        }
+        matrix = matrix_mapping(model.predict_score_matrix(home, away, 10, **context))
+        return {
+            "match_result": result_1x2(matrix),
+            "handicap_result": result_1x2(matrix, int(fixture.get("handicap", 0))),
+            "total_goals": total_goals(matrix),
+            "correct_score": correct_score(matrix, OFFICIAL_CORRECT_SCORES),
+            "half_full": HalfFullModel(model).predict_proba(home, away, 10),
+        }
+    return predict
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -192,9 +268,23 @@ def main(argv: list[str] | None = None) -> int:
                 fixture for fixture in fixtures
                 if acceptance.get(str(fixture.get("competition_code")), {}).get("approved") is True
             ]
-            candidates = build_live_candidates(
-                history, fixtures, source_as_of=source_as_of, now=now,
-                max_age_minutes=args.max_age_minutes, safety_margin=args.safety_margin,
+            if bool(args.club_elo_csv) != bool(args.uefa_history_dir):
+                raise DailyLiveError("UCL requires both --club-elo-csv and --uefa-history-dir")
+            fixture_predictor = None
+            if args.club_elo_csv and args.uefa_history_dir:
+                fixture_predictor = _build_ucl_predictor(
+                    args.club_elo_csv, args.uefa_history_dir, TeamAliases(aliases)
+                )
+            else:
+                fixtures = [row for row in fixtures if str(row.get("competition_code")) != "UCL"]
+            validate_freshness(
+                source_as_of, now=now, max_age=timedelta(minutes=args.max_age_minutes)
+            )
+            if not fixtures:
+                raise DailyLiveError("no approved fixtures have complete production inputs")
+            candidates = build_paper_candidates(
+                history, fixtures, prediction_time=now, safety_margin=args.safety_margin,
+                acceptance_config=acceptance, fixture_predictor=fixture_predictor,
             )
         except DailyLiveError as exc:
             raise SystemExit(f"daily-live 安全拒绝: {exc}") from exc

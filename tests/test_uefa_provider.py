@@ -10,8 +10,8 @@ def _match(match_id: int = 7) -> dict:
         "id": match_id,
         "competitionPhase": "QUALIFYING",
         "kickOffTime": {"dateTime": "2025-07-08T18:00:00Z"},
-        "homeTeam": {"internationalName": "Kairat Almaty"},
-        "awayTeam": {"internationalName": "Olimpija Ljubljana"},
+        "homeTeam": {"internationalName": "Kairat Almaty", "countryCode": "KAZ"},
+        "awayTeam": {"internationalName": "Olimpija Ljubljana", "countryCode": "SVN"},
         "score": {"regular": {"home": 1, "away": 1}, "total": {"home": 3, "away": 2}},
         "round": {"name": "First qualifying round"},
         "leg": 1,
@@ -39,6 +39,7 @@ class UefaProviderTests(unittest.TestCase):
     self.assertEqual("uefa:7", rows[0]["provider_match_id"])
     self.assertEqual((1, 1), (rows[0]["home_goals"], rows[0]["away_goals"]))
     self.assertEqual("First qualifying round", rows[0]["round"])
+    self.assertEqual(("KAZ", "SVN"), (rows[0]["home_association"], rows[0]["away_association"]))
     self.assertTrue(rows[0]["source_url"].startswith("https://match.uefa.com/"))
     self.assertEqual(64, len(rows[0]["source_hash"]))
     self.assertEqual([], quarantine)

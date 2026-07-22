@@ -152,21 +152,27 @@ def send_configured(
         raise RuntimeError("no notification channel configured")
     if dedupe_key is not None and dedupe_store is None:
         raise ValueError("dedupe_store is required when dedupe_key is provided")
-    if dedupe_key is not None and dedupe_store is not None and dedupe_store.contains(dedupe_key):
+    delivered_keys = {
+        channel: f"{dedupe_key}:{channel}" for channel in channel_names
+    } if dedupe_key is not None else {}
+    if delivered_keys and dedupe_store is not None and all(
+        dedupe_store.contains(key) for key in delivered_keys.values()
+    ):
         return NotificationSummary(channel_names, duplicate=True, dedupe_key=dedupe_key)
 
     successes: list[NotificationResult] = []
     failures: list[NotificationFailure] = []
     for channel, send in configured:
+        if dedupe_store is not None and channel in delivered_keys and dedupe_store.contains(delivered_keys[channel]):
+            continue
         try:
-            successes.append(send())
+            result = send()
+            successes.append(result)
+            if dedupe_store is not None and channel in delivered_keys:
+                dedupe_store.add(delivered_keys[channel])
         except Exception as exc:  # isolate one transport without suppressing its outcome
             failures.append(NotificationFailure(channel, type(exc).__name__))
 
-    # A completely failed run remains retryable; one successful channel makes the
-    # logical notification delivered and prevents duplicate fan-out on a rerun.
-    if dedupe_key is not None and dedupe_store is not None and successes:
-        dedupe_store.add(dedupe_key)
     return NotificationSummary(
         channel_names,
         tuple(successes),

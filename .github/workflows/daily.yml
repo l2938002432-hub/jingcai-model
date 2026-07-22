@@ -5,6 +5,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  pages: write
+  id-token: write
 concurrency:
   group: daily-sporttery
   cancel-in-progress: false
@@ -12,11 +14,43 @@ jobs:
   fetch-and-notify:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Prepare run date
+        id: run-date
+        shell: bash
+        run: echo "date=$(TZ=Asia/Shanghai date +%F)" >> "$GITHUB_OUTPUT"
+      - name: Restore notification idempotency state
+        uses: actions/cache@v4
+        with:
+          path: artifacts/daily/.notification-dedupe.json
+          key: daily-notification-${{ steps.run-date.outputs.date }}-${{ github.run_id }}
+          restore-keys: |
+            daily-notification-${{ steps.run-date.outputs.date }}-
+      - name: Download free historical inputs
+        shell: bash
+        run: |
+          mkdir -p data/raw/football-data data/raw/club-history data/raw/uefa
+          curl --fail --location --retry 3 --silent --show-error \
+            https://www.football-data.co.uk/mmz4281/2526/E0.csv \
+            --output data/raw/football-data/E0_2025-26.csv
+          curl --fail --location --retry 3 --silent --show-error \
+            https://raw.githubusercontent.com/xgabora/Club-Football-Match-Data-2000-2025/main/data/Matches.csv \
+            --output data/raw/club-history/Matches.csv
+          curl --fail --location --retry 3 --silent --show-error \
+            https://raw.githubusercontent.com/xgabora/Club-Football-Match-Data-2000-2025/main/data/EloRatings.csv \
+            --output data/raw/club-history/EloRatings.csv
+          for year in $(seq 2017 2025); do
+            curl --fail --location --retry 3 --silent --show-error \
+              "https://match.uefa.com/v5/matches?competitionId=1&seasonYear=${year}&limit=500&offset=0&order=ASC" \
+              --output "data/raw/uefa/ucl-${year}.json"
+          done
       - name: Fetch, archive and notify
         env:
           PYTHONPATH: src
@@ -24,7 +58,21 @@ jobs:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           WECOM_WEBHOOK_URL: ${{ secrets.WECOM_WEBHOOK_URL }}
           SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
-        run: python scripts/daily_cloud_run.py --output-dir artifacts/daily
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if python scripts/daily_cloud_run.py --output-dir artifacts/daily; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then sleep 20; fi
+          done
+          exit 1
+      - name: Build public report site
+        shell: bash
+        run: |
+          mkdir -p artifacts/site
+          cp "artifacts/daily/report-${{ steps.run-date.outputs.date }}.html" artifacts/site/index.html
+          cp "artifacts/daily/report-${{ steps.run-date.outputs.date }}.json" artifacts/site/report.json
       - name: Upload audit snapshot
         if: always()
         uses: actions/upload-artifact@v4
@@ -33,3 +81,12 @@ jobs:
           path: artifacts/daily
           if-no-files-found: warn
           retention-days: 30
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload report site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: artifacts/site
+      - name: Publish report site
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -113,6 +113,24 @@ class NotificationTests(unittest.TestCase):
         self.assertFalse(second.duplicate)
         self.assertEqual(2, sender.call_count)
 
+    def test_retry_sends_only_channels_that_failed_previously(self) -> None:
+        store = MemoryDedupeStore()
+        env = {"FEISHU_WEBHOOK_URL": "https://example.invalid/hook", "SERVERCHAN_SENDKEY": "SCT_KEY"}
+        with patch.dict(os.environ, env, clear=True), patch(
+            "jingcai.notifications.send_feishu", return_value=NotificationResult("feishu", 200)
+        ) as feishu, patch(
+            "jingcai.notifications.send_serverchan",
+            side_effect=[RuntimeError("offline"), NotificationResult("serverchan", 200)],
+        ) as wechat:
+            first = send_configured("日报", "内容", dedupe_key="daily", dedupe_store=store)
+            second = send_configured("日报", "内容", dedupe_key="daily", dedupe_store=store)
+            third = send_configured("日报", "内容", dedupe_key="daily", dedupe_store=store)
+        self.assertEqual(("feishu",), tuple(item.channel for item in first.successes))
+        self.assertEqual(("serverchan",), tuple(item.channel for item in second.successes))
+        self.assertTrue(third.duplicate)
+        self.assertEqual(1, feishu.call_count)
+        self.assertEqual(2, wechat.call_count)
+
     def test_serverchan_uses_form_body_without_logging_key(self) -> None:
         captured = {}
 

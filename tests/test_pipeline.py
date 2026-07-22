@@ -148,6 +148,39 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(1, len(candidates))
         self.assertEqual("match_result", candidates[0]["market"])
 
+    def test_fixture_predictor_can_safely_cover_team_outside_local_history(self) -> None:
+        fixture = {
+            "match_id": "ucl-1", "competition_code": "UCL",
+            "home_team": "New Home", "away_team": "New Away",
+            "odds_as_of": "2026-07-22T10:00:00+00:00",
+            "sale_cutoff": "2026-07-22T12:00:00+00:00",
+            "odds": {"match_result": {"home": 3.0, "draw": 3.0, "away": 3.0}},
+        }
+        prediction = {"match_result": {"home": 0.6, "draw": 0.2, "away": 0.2}}
+        candidates = build_paper_candidates(
+            synthetic_matches(), [fixture],
+            acceptance_config={"UCL": {"approved": True, "markets": {"match_result": True}}},
+            fixture_predictor=lambda _: prediction,
+            prediction_time=datetime(2026, 7, 22, 11, tzinfo=UTC),
+        )
+        self.assertEqual(1, len(candidates))
+        self.assertEqual("home", candidates[0]["outcome"])
+
+    def test_fixture_predictor_none_preserves_unknown_team_fail_closed(self) -> None:
+        fixture = {
+            "match_id": "ucl-2", "competition_code": "UCL",
+            "home_team": "New Home", "away_team": "New Away",
+            "odds_as_of": "2026-07-22T10:00:00+00:00",
+            "sale_cutoff": "2026-07-22T12:00:00+00:00",
+            "odds": {"match_result": {"home": 10.0, "draw": 10.0, "away": 10.0}},
+        }
+        self.assertEqual([], build_paper_candidates(
+            synthetic_matches(), [fixture],
+            acceptance_config={"UCL": {"approved": True, "markets": {"match_result": True}}},
+            fixture_predictor=lambda _: None,
+            prediction_time=datetime(2026, 7, 22, 11, tzinfo=UTC),
+        ))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 import json
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from jingcai.backtest import ForecastObservation, brier_score, log_loss
 from jingcai.markets import (
@@ -117,6 +117,7 @@ def build_paper_candidates(
     safety_margin: float = 0.03,
     prediction_time: datetime | None = None,
     acceptance_config: Mapping[str, Any] | None = None,
+    fixture_predictor: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
 ) -> list[dict[str, Any]]:
     if acceptance_config is None:
         acceptance_path = Path(__file__).resolve().parents[2] / "config" / "model-acceptance.json"
@@ -137,7 +138,11 @@ def build_paper_candidates(
         approved_markets = competition_acceptance.get("markets", {})
         if not isinstance(approved_markets, Mapping):
             continue
-        if str(fixture["home_team"]) not in trained_teams or str(fixture["away_team"]) not in trained_teams:
+        external_prediction = fixture_predictor(fixture) if fixture_predictor is not None else None
+        if external_prediction is None and (
+            str(fixture["home_team"]) not in trained_teams
+            or str(fixture["away_team"]) not in trained_teams
+        ):
             continue
         cutoff = datetime.fromisoformat(str(fixture["sale_cutoff"]))
         odds_as_of = datetime.fromisoformat(str(fixture["odds_as_of"]))
@@ -147,10 +152,8 @@ def build_paper_candidates(
             raise ValueError("odds_as_of cannot be after prediction_time")
         if as_of > cutoff:
             continue
-        prediction = predict_all_markets(
-            history,
-            home_team=str(fixture["home_team"]),
-            away_team=str(fixture["away_team"]),
+        prediction = external_prediction or predict_all_markets(
+            history, home_team=str(fixture["home_team"]), away_team=str(fixture["away_team"]),
             handicap=int(fixture.get("handicap", 0)),
         )
         best: dict[str, Any] | None = None
