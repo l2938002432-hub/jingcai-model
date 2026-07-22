@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import tempfile
 import unittest
 from datetime import timedelta, timezone
 from pathlib import Path
@@ -23,13 +24,11 @@ class FootballDataTests(unittest.TestCase):
         })
 
     def test_missing_result_is_rejected(self) -> None:
-        path = FIXTURES / "invalid.csv"
-        path.write_text("Div,Date,HomeTeam,AwayTeam,FTHG,FTAG\nE0,01/01/2025,A,B,,1\n", encoding="utf-8")
-        try:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid.csv"
+            path.write_text("Div,Date,HomeTeam,AwayTeam,FTHG,FTAG\nE0,01/01/2025,A,B,,1\n", encoding="utf-8")
             with self.assertRaises(FootballDataError):
                 list(load_football_data_csv(path, season="2024/25"))
-        finally:
-            path.unlink()
 
 
 class ManualTests(unittest.TestCase):
@@ -38,13 +37,11 @@ class ManualTests(unittest.TestCase):
         self.assertEqual(row["provider_match_id"], "jc-1")
 
     def test_non_utc_is_rejected(self) -> None:
-        path = FIXTURES / "invalid.json"
-        path.write_text('[{"provider_match_id":"1","competition":"x","season":"s","kickoff_utc":"2025-01-01T00:00:00+08:00","home_team":"a","away_team":"b","home_goals":0,"away_goals":0}]', encoding="utf-8")
-        try:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid.json"
+            path.write_text('[{"provider_match_id":"1","competition":"x","season":"s","kickoff_utc":"2025-01-01T00:00:00+08:00","home_team":"a","away_team":"b","home_goals":0,"away_goals":0}]', encoding="utf-8")
             with self.assertRaises(ManualImportError):
                 list(load_manual_json(path))
-        finally:
-            path.unlink()
 
 
 class IdentityTests(unittest.TestCase):
