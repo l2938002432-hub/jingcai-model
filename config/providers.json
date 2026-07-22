@@ -1,0 +1,22 @@
+{
+  "sporttery": {
+    "purpose": "official fixtures, sale status, odds and results",
+    "production_status": "manual_import_only_until_terms_reviewed",
+    "terms_url": "https://www.sporttery.cn/",
+    "max_requests_per_minute": 2,
+    "public_redistribution": false
+  },
+  "football_data_co_uk": {
+    "purpose": "offline historical training and probability validation",
+    "production_status": "research",
+    "source_url": "https://www.football-data.co.uk/data.php",
+    "public_redistribution": false
+  },
+  "open_meteo": {
+    "purpose": "weather features",
+    "production_status": "planned",
+    "source_url": "https://open-meteo.com/en/docs",
+    "attribution_required": true
+  }
+}
+
