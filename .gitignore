@@ -13,3 +13,4 @@ data/processed/
 *.parquet
 artifacts/
 mlruns/
+.worktrees/
