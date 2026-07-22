@@ -3,7 +3,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from jingcai.notifications import send_configured, send_feishu, send_wecom
+from jingcai.notifications import send_configured, send_feishu, send_serverchan, send_wecom
 
 
 class FakeResponse:
@@ -60,6 +60,19 @@ class NotificationTests(unittest.TestCase):
     def test_send_configured_skips_absent_channels(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual([], send_configured("日报", "内容"))
+
+    def test_serverchan_uses_form_body_without_logging_key(self) -> None:
+        captured = {}
+
+        def sender(request, timeout):
+            captured["url"] = request.full_url
+            captured["body"] = request.data.decode("utf-8")
+            return FakeResponse()
+
+        result = send_serverchan("SCT_TEST_KEY", "竞彩日报", "研究候选", sender)
+        self.assertEqual("serverchan", result.channel)
+        self.assertIn("title=", captured["body"])
+        self.assertTrue(captured["url"].endswith("/SCT_TEST_KEY.send"))
 
 
 if __name__ == "__main__":

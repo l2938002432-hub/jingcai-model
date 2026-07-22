@@ -23,6 +23,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           WECOM_WEBHOOK_URL: ${{ secrets.WECOM_WEBHOOK_URL }}
+          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
         run: python scripts/daily_cloud_run.py --output-dir artifacts/daily
       - name: Upload audit snapshot
         if: always()

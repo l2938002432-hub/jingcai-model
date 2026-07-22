@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.request import Request, urlopen
+from urllib.parse import urlencode
 
 
 Sender = Callable[..., Any]
@@ -61,6 +62,26 @@ def send_wecom(webhook_url: str, title: str, text: str, sender: Sender = urlopen
     return _post_json(webhook_url, payload, "wecom", sender)
 
 
+def send_serverchan(send_key: str, title: str, text: str, sender: Sender = urlopen) -> NotificationResult:
+    """Push one consolidated notification to personal WeChat via ServerChan Turbo."""
+    key = send_key.strip()
+    if not key or any(char in key for char in "/?#&"):
+        raise ValueError("invalid ServerChan SendKey")
+    url = f"https://sctapi.ftqq.com/{key}.send"
+    body = urlencode({"title": title[:32], "desp": text}).encode("utf-8")
+    request = Request(
+        url, data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded; charset=utf-8"},
+        method="POST",
+    )
+    with sender(request, timeout=10) as response:
+        status = int(response.status)
+        payload = _response_payload(response)
+        if not 200 <= status < 300 or payload.get("code") not in (0, "0"):
+            raise RuntimeError(f"serverchan notification failed with HTTP {status}")
+        return NotificationResult("serverchan", status)
+
+
 def send_configured(title: str, text: str) -> list[NotificationResult]:
     """Send to every configured channel; an absent secret disables it."""
     results = []
@@ -68,4 +89,6 @@ def send_configured(title: str, text: str) -> list[NotificationResult]:
         results.append(send_feishu(url, title, text))
     if url := os.environ.get("WECOM_WEBHOOK_URL", "").strip():
         results.append(send_wecom(url, title, text))
+    if key := os.environ.get("SERVERCHAN_SENDKEY", "").strip():
+        results.append(send_serverchan(key, title, text))
     return results
