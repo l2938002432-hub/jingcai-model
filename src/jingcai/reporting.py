@@ -25,11 +25,16 @@ def render_daily_report(
         play = html.escape(str(item.get("play", "-")))
         probability = float(item.get("probability", 0.0))
         conservative_ev = float(item.get("conservative_ev", 0.0))
+        decimal_odds = item.get("decimal_odds")
+        market_probability = item.get("market_probability")
         action = "候选" if can_recommend and conservative_ev > 0 else "观察/模拟"
+        details = ""
+        if decimal_odds is not None and market_probability is not None:
+            details = f"<br><small>奖金 {float(decimal_odds):.2f} · 市场概率 {float(market_probability):.1%}</small>"
         rows.append(
             "<tr>"
             f"<td>{label}</td><td>{play}</td><td>{probability:.1%}</td>"
-            f"<td>{conservative_ev:.1%}</td><td>{action}</td>"
+            f"<td>{conservative_ev:.1%}{details}</td><td>{action}</td>"
             "</tr>"
         )
     if not rows:

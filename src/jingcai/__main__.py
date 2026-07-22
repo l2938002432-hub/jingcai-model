@@ -9,7 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jingcai import __version__
-from jingcai.pipeline import predict_all_markets, walk_forward_1x2
+from jingcai.pipeline import build_paper_candidates, predict_all_markets, walk_forward_1x2
 from jingcai.providers.football_data import load_football_data_csv
 from jingcai.reporting import render_daily_report, render_probability_report, write_report
 
@@ -34,6 +34,11 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--directory", default="reports")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
+    daily = subparsers.add_parser("daily-paper", help="根据人工导入的官方奖金生成模拟盈利日报")
+    _add_history_args(daily)
+    daily.add_argument("--fixtures-json", required=True)
+    daily.add_argument("--safety-margin", type=float, default=0.03)
+    daily.add_argument("--output", default="reports/daily-paper.html")
     return parser
 
 
@@ -118,6 +123,22 @@ def main(argv: list[str] | None = None) -> int:
             pass
         finally:
             server.server_close()
+        return 0
+    if args.command == "daily-paper":
+        fixtures = json.loads(Path(args.fixtures_json).read_text(encoding="utf-8"))
+        if not isinstance(fixtures, list):
+            raise SystemExit("fixtures JSON 顶层必须是数组")
+        candidates = build_paper_candidates(
+            _load_history(args), fixtures, safety_margin=args.safety_margin
+        )
+        report = render_daily_report(
+            generated_at=datetime.now(UTC),
+            model_state="PAPER_ONLY",
+            candidates=candidates,
+            data_fresh=True,
+        )
+        output = write_report(args.output, report)
+        print(json.dumps({"output": str(output.resolve()), "candidates": len(candidates)}, ensure_ascii=False))
         return 0
     return 2
 

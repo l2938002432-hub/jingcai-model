@@ -17,6 +17,7 @@ python -m jingcai status
 python -m jingcai demo-report --output reports\demo.html
 python -m jingcai predict --csv path\to\league.csv --season 2025-26 --home "Home" --away "Away" --output reports\prediction.html
 python -m jingcai serve --directory reports
+python -m jingcai daily-paper --csv path\to\league.csv --season 2025-26 --fixtures-json config\daily-fixtures.example.json --output reports\daily-paper.html
 ```
 
 完整设计见 `docs/superpowers/specs/2026-07-22-jingcai-prediction-system-design.md`，实施计划见 `docs/superpowers/plans/2026-07-22-jingcai-implementation-plan.md`。

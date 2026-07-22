@@ -1,0 +1,18 @@
+[
+  {
+    "match_id": "20260722-001",
+    "competition": "示例联赛",
+    "home_team": "Arsenal",
+    "away_team": "Chelsea",
+    "scheduled_start": "2099-01-01T20:00:00+08:00",
+    "sale_cutoff": "2099-01-01T19:55:00+08:00",
+    "odds_as_of": "2026-07-22T18:00:00+08:00",
+    "handicap": -1,
+    "odds": {
+      "match_result": {"home": 2.05, "draw": 3.20, "away": 3.40},
+      "handicap_result": {"home": 3.60, "draw": 3.75, "away": 1.75},
+      "total_goals": {"0": 15.0, "1": 5.0, "2": 3.4, "3": 3.6, "4": 5.5, "5": 9.0, "6": 16.0, "7+": 24.0},
+      "half_full": {"HH": 3.2, "HD": 15.0, "HA": 34.0, "DH": 5.0, "DD": 5.2, "DA": 8.0, "AH": 26.0, "AD": 16.0, "AA": 5.5}
+    }
+  }
+]
