@@ -116,6 +116,7 @@ def normalize_payload(
                 "match_id": str(match["matchId"]),
                 "match_num": str(match.get("matchNumStr", "")),
                 "competition": str(match.get("leagueAbbName", "")),
+                "competition_code": str(match.get("leagueCode", "")),
                 "home_team": str(match["homeTeamAbbName"]),
                 "away_team": str(match["awayTeamAbbName"]),
                 "kickoff": kickoff.isoformat(),

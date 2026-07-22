@@ -41,3 +41,5 @@ python -m jingcai daily-paper --csv path\to\league.csv --season 2025-26 --fixtur
 完整设计见 `docs/superpowers/specs/2026-07-22-jingcai-prediction-system-design.md`，实施计划见 `docs/superpowers/plans/2026-07-22-jingcai-implementation-plan.md`。
 
 真实历史基线结果见 `docs/validation/epl-baseline-2020-2026.md`。当前基础模型在英超六赛季的 1,520 场样本外预测中，Log Loss 相对历史频率基线改善约 6.2%，但尚未获得可信中国竞彩历史奖金，不能宣称已验证盈利。
+
+多联赛验收见 `docs/validation/multi-league-baseline-2026-07-22.md`。当前仅挪超和巴甲进入 PAPER_ONLY；美职与欧冠资格赛会自动停止候选。

@@ -51,6 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     live.add_argument("--club-history-csv", help="MIT 多联赛冷启动历史 CSV")
     live.add_argument("--history-divisions", default="BRA,NOR,USA", help="冷启动联赛代码，逗号分隔")
     live.add_argument("--aliases-json", default="config/team-aliases.json")
+    live.add_argument("--acceptance-json", default="config/model-acceptance.json")
     live.add_argument("--save-snapshot", default="data/snapshots/sporttery-latest.json")
     live.add_argument("--max-age-minutes", type=int, default=30)
     live.add_argument("--safety-margin", type=float, default=0.03)
@@ -186,6 +187,11 @@ def main(argv: list[str] | None = None) -> int:
                 ))
             aliases = json.loads(Path(args.aliases_json).read_text(encoding="utf-8"))
             history, fixtures = canonicalize_teams(history, fixtures, aliases)
+            acceptance = json.loads(Path(args.acceptance_json).read_text(encoding="utf-8"))
+            fixtures = [
+                fixture for fixture in fixtures
+                if acceptance.get(str(fixture.get("competition_code")), {}).get("approved") is True
+            ]
             candidates = build_live_candidates(
                 history, fixtures, source_as_of=source_as_of, now=now,
                 max_age_minutes=args.max_age_minutes, safety_margin=args.safety_margin,
