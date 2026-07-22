@@ -14,3 +14,4 @@ data/processed/
 artifacts/
 mlruns/
 .worktrees/
+reports/

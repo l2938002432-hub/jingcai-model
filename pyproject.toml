@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jingcai-model"
+version = "0.1.0"
+description = "Auditable football lottery probability research and paper-betting toolkit"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Private" }
+dependencies = []
+
+[project.optional-dependencies]
+data = ["duckdb>=1.0", "pandas>=2.2"]
+dashboard = ["streamlit>=1.37"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+jingcai = "jingcai.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jingcai"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
