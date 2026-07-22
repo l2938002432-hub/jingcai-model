@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Iterator, Protocol
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 
@@ -15,6 +15,50 @@ Sender = Callable[..., Any]
 class NotificationResult:
     channel: str
     status_code: int
+
+
+@dataclass(frozen=True)
+class NotificationFailure:
+    channel: str
+    error_type: str
+    message: str = "delivery failed"
+
+
+@dataclass(frozen=True)
+class NotificationSummary:
+    """Aggregate delivery outcome. Iteration yields successes for legacy callers."""
+
+    configured_channels: tuple[str, ...]
+    successes: tuple[NotificationResult, ...] = ()
+    failures: tuple[NotificationFailure, ...] = ()
+    duplicate: bool = False
+    dedupe_key: str | None = None
+
+    def __iter__(self) -> Iterator[NotificationResult]:
+        return iter(self.successes)
+
+    @property
+    def delivered(self) -> bool:
+        return bool(self.successes)
+
+
+class DedupeStore(Protocol):
+    """Minimal persistence boundary; production may back this with a file or database."""
+
+    def contains(self, key: str) -> bool: ...
+
+    def add(self, key: str) -> None: ...
+
+
+class MemoryDedupeStore:
+    def __init__(self) -> None:
+        self._keys: set[str] = set()
+
+    def contains(self, key: str) -> bool:
+        return key in self._keys
+
+    def add(self, key: str) -> None:
+        self._keys.add(key)
 
 
 def _response_payload(response: Any) -> dict[str, Any]:
@@ -82,13 +126,50 @@ def send_serverchan(send_key: str, title: str, text: str, sender: Sender = urlop
         return NotificationResult("serverchan", status)
 
 
-def send_configured(title: str, text: str) -> list[NotificationResult]:
-    """Send to every configured channel; an absent secret disables it."""
-    results = []
+def send_configured(
+    title: str,
+    text: str,
+    *,
+    require_configured: bool = False,
+    dedupe_key: str | None = None,
+    dedupe_store: DedupeStore | None = None,
+) -> NotificationSummary:
+    """Send independently to all configured channels and summarize every outcome.
+
+    Exceptions are reduced to their type and a generic message so webhook URLs and
+    SendKeys embedded in transport errors cannot escape through reports or logs.
+    """
+    configured: list[tuple[str, Callable[[], NotificationResult]]] = []
     if url := os.environ.get("FEISHU_WEBHOOK_URL", "").strip():
-        results.append(send_feishu(url, title, text))
+        configured.append(("feishu", lambda url=url: send_feishu(url, title, text)))
     if url := os.environ.get("WECOM_WEBHOOK_URL", "").strip():
-        results.append(send_wecom(url, title, text))
+        configured.append(("wecom", lambda url=url: send_wecom(url, title, text)))
     if key := os.environ.get("SERVERCHAN_SENDKEY", "").strip():
-        results.append(send_serverchan(key, title, text))
-    return results
+        configured.append(("serverchan", lambda key=key: send_serverchan(key, title, text)))
+
+    channel_names = tuple(channel for channel, _send in configured)
+    if not configured and require_configured:
+        raise RuntimeError("no notification channel configured")
+    if dedupe_key is not None and dedupe_store is None:
+        raise ValueError("dedupe_store is required when dedupe_key is provided")
+    if dedupe_key is not None and dedupe_store is not None and dedupe_store.contains(dedupe_key):
+        return NotificationSummary(channel_names, duplicate=True, dedupe_key=dedupe_key)
+
+    successes: list[NotificationResult] = []
+    failures: list[NotificationFailure] = []
+    for channel, send in configured:
+        try:
+            successes.append(send())
+        except Exception as exc:  # isolate one transport without suppressing its outcome
+            failures.append(NotificationFailure(channel, type(exc).__name__))
+
+    # A completely failed run remains retryable; one successful channel makes the
+    # logical notification delivered and prevents duplicate fan-out on a rerun.
+    if dedupe_key is not None and dedupe_store is not None and successes:
+        dedupe_store.add(dedupe_key)
+    return NotificationSummary(
+        channel_names,
+        tuple(successes),
+        tuple(failures),
+        dedupe_key=dedupe_key,
+    )

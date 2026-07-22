@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any, Iterable
 
-from .poisson import field, match_values, normalize, poisson_probabilities
+from .poisson import field, match_timestamp, match_values, normalize, poisson_probabilities
 
 
 class EloModel:
@@ -20,10 +20,7 @@ class EloModel:
         materialized = list(matches)
         if not materialized:
             raise ValueError("at least one completed match is required")
-        try:
-            materialized.sort(key=lambda m: field(m, "kickoff", "date", "timestamp"))
-        except ValueError:
-            pass  # Caller order is chronological when no timestamp is supplied.
+        materialized.sort(key=match_timestamp)
         self.ratings = {}
         self.history = []
         total_home = total_away = 0
@@ -35,10 +32,7 @@ class EloModel:
             multiplier = 1.0 + math.log1p(abs(hg - ag))
             change = self.k_factor * multiplier * (actual - expected)
             self.ratings[home], self.ratings[away] = rh + change, ra - change
-            try:
-                stamp = field(match, "kickoff", "date", "timestamp")
-            except ValueError:
-                stamp = len(self.history)
+            stamp = field(match, "kickoff_utc", "kickoff_date", "kickoff", "date", "timestamp")
             self.history.append((stamp, home, away))
             total_home += hg
             total_away += ag

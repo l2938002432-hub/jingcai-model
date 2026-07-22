@@ -1,8 +1,12 @@
 {
   "Bodo/Glimt": ["博德闪耀"], "HamKam": ["汉坎", "Ham-Kam"],
   "Lillestrom": ["利勒斯特"], "Viking": ["维京"],
-  "Inter Miami": ["迈国际"], "Chicago Fire": ["芝加哥"],
+  "Inter Miami": ["迈国际", "Inter Miami CF"], "Chicago Fire": ["芝加哥"],
   "Los Angeles FC": ["洛杉矶FC"], "Real Salt Lake": ["盐湖城"],
+  "Atlanta Utd": ["Atlanta United FC"], "CF Montreal": ["CF Montréal", "Impact de Montréal"],
+  "Charlotte": ["Charlotte FC"], "Chivas USA": ["CD Chivas"], "DC United": ["D.C. United"],
+  "Minnesota United": ["Minnesota United FC"], "New York City": ["New York City FC"],
+  "New York Red Bulls": ["New York RB"], "St. Louis City": ["St. Louis City SC"],
   "Chapecoense-SC": ["沙佩科"], "Flamengo RJ": ["弗拉门戈"],
   "Sao Paulo": ["圣保罗"], "Athletico-PR": ["巴竞技"],
   "Corinthians": ["科林蒂安"], "Remo": ["里莫"],

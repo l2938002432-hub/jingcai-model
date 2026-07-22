@@ -3,7 +3,14 @@ import os
 import unittest
 from unittest.mock import patch
 
-from jingcai.notifications import send_configured, send_feishu, send_serverchan, send_wecom
+from jingcai.notifications import (
+    MemoryDedupeStore,
+    NotificationResult,
+    send_configured,
+    send_feishu,
+    send_serverchan,
+    send_wecom,
+)
 
 
 class FakeResponse:
@@ -59,7 +66,52 @@ class NotificationTests(unittest.TestCase):
 
     def test_send_configured_skips_absent_channels(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
-            self.assertEqual([], send_configured("日报", "内容"))
+            summary = send_configured("日报", "内容")
+        self.assertEqual((), summary.configured_channels)
+        self.assertFalse(summary.delivered)
+
+    def test_send_configured_can_require_a_channel(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "no notification channel configured"):
+                send_configured("日报", "内容", require_configured=True)
+
+    def test_channel_failures_are_isolated_and_sanitized(self) -> None:
+        secret = "secret-webhook-token"
+        env = {"FEISHU_WEBHOOK_URL": f"https://example.invalid/{secret}", "SERVERCHAN_SENDKEY": "SCT_KEY"}
+        with patch.dict(os.environ, env, clear=True), patch(
+            "jingcai.notifications.send_feishu", side_effect=RuntimeError(f"failed {secret}")
+        ), patch(
+            "jingcai.notifications.send_serverchan", return_value=NotificationResult("serverchan", 200)
+        ):
+            summary = send_configured("日报", "内容")
+        self.assertEqual(("feishu", "serverchan"), summary.configured_channels)
+        self.assertEqual(("serverchan",), tuple(item.channel for item in summary.successes))
+        self.assertEqual("RuntimeError", summary.failures[0].error_type)
+        self.assertNotIn(secret, repr(summary))
+
+    def test_dedupe_marks_only_a_delivered_notification(self) -> None:
+        store = MemoryDedupeStore()
+        env = {"FEISHU_WEBHOOK_URL": "https://example.invalid/hook"}
+        with patch.dict(os.environ, env, clear=True), patch(
+            "jingcai.notifications.send_feishu", return_value=NotificationResult("feishu", 200)
+        ) as sender:
+            first = send_configured("日报", "内容", dedupe_key="2026-07-22:daily", dedupe_store=store)
+            second = send_configured("日报", "内容", dedupe_key="2026-07-22:daily", dedupe_store=store)
+        self.assertTrue(first.delivered)
+        self.assertTrue(second.duplicate)
+        self.assertEqual(1, sender.call_count)
+
+    def test_complete_failure_remains_retryable(self) -> None:
+        store = MemoryDedupeStore()
+        env = {"FEISHU_WEBHOOK_URL": "https://example.invalid/hook"}
+        with patch.dict(os.environ, env, clear=True), patch(
+            "jingcai.notifications.send_feishu", side_effect=RuntimeError("offline")
+        ) as sender:
+            first = send_configured("日报", "内容", dedupe_key="daily", dedupe_store=store)
+            second = send_configured("日报", "内容", dedupe_key="daily", dedupe_store=store)
+        self.assertFalse(first.delivered)
+        self.assertFalse(second.duplicate)
+        self.assertEqual(2, sender.call_count)
 
     def test_serverchan_uses_form_body_without_logging_key(self) -> None:
         captured = {}

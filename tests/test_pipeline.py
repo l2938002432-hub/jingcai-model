@@ -34,6 +34,10 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(math.isfinite(result.baseline_log_loss))
         self.assertIn("UNAVAILABLE", result.roi_status)
 
+    def test_walk_forward_accepts_frozen_time_decay(self) -> None:
+        result = walk_forward_1x2(synthetic_matches(), min_train=12, half_life_days=365)
+        self.assertEqual(12, result.evaluated_matches)
+
     def test_predict_all_five_markets(self) -> None:
         result = predict_all_markets(synthetic_matches(), home_team="A", away_team="B", handicap=-1)
         for market in ("match_result", "handicap_result", "total_goals", "correct_score", "half_full"):

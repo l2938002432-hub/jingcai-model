@@ -14,6 +14,7 @@ from jingcai.markets import (
     total_goals,
 )
 from jingcai.models import DixonColesModel, HalfFullModel
+from jingcai.models.poisson import field, match_timestamp
 
 
 def matrix_mapping(matrix: list[list[float]]) -> dict[tuple[int, int], float]:
@@ -50,8 +51,9 @@ def walk_forward_1x2(
     *,
     min_train: int = 30,
     max_goals: int = 10,
+    half_life_days: float | None = None,
 ) -> WalkForwardResult:
-    rows = sorted(list(matches), key=lambda item: str(item["kickoff_utc"]))
+    rows = sorted(list(matches), key=match_timestamp)
     if min_train < 3 or len(rows) <= min_train:
         raise ValueError("walk-forward evaluation needs more matches than min_train")
     model_observations: list[ForecastObservation] = []
@@ -59,7 +61,11 @@ def walk_forward_1x2(
     for index in range(min_train, len(rows)):
         train = rows[:index]
         test = rows[index]
-        model = DixonColesModel().fit(train)
+        model = DixonColesModel().fit(
+            train,
+            as_of=field(test, "kickoff_utc", "kickoff_date", "kickoff", "date", "timestamp"),
+            half_life_days=half_life_days,
+        )
         probabilities = result_1x2(
             matrix_mapping(model.predict_score_matrix(str(test["home_team"]), str(test["away_team"]), max_goals))
         )

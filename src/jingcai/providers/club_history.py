@@ -56,4 +56,7 @@ def load_club_history_csv(
                 "away_team": away,
                 "home_goals": home_goals,
                 "away_goals": away_goals,
+                # Retain the source text so downstream integrity checks can
+                # detect ambiguous numeric dates instead of silently guessing.
+                "source_match_date": row["MatchDate"].strip(),
             }

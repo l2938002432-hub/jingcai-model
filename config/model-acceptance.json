@@ -1,6 +1,6 @@
 {
   "NTL": {"history_division": "NOR", "approved": true, "log_loss_improvement": 0.0434, "brier_improvement": 0.0504},
   "BD1": {"history_division": "BRA", "approved": true, "log_loss_improvement": 0.0130, "brier_improvement": 0.0235},
-  "MLS": {"history_division": "USA", "approved": false, "log_loss_improvement": 0.0029, "brier_improvement": 0.0057},
+  "MLS": {"history_division": "USA", "approved": false, "reason": "历史日期存在日/月混排；旧锁箱无效，等待独立赛程校正后重验"},
   "UCL": {"history_division": null, "approved": false, "reason": "缺少已验收的欧战资格赛历史"}
 }

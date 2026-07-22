@@ -26,9 +26,14 @@ class DixonColesModel(PoissonModel):
             return 1.0 - rho
         return 1.0
 
-    def fit(self, matches: Iterable[Any]) -> "DixonColesModel":
+    def fit(
+        self,
+        matches: Iterable[Any],
+        as_of: Any | None = None,
+        half_life_days: float | None = None,
+    ) -> "DixonColesModel":
         materialized = list(matches)
-        super().fit(materialized)
+        super().fit(materialized, as_of=as_of, half_life_days=half_life_days)
         if self.fixed_rho is not None:
             self.rho = max(-0.2, min(0.2, float(self.fixed_rho)))
             return self
@@ -37,7 +42,7 @@ class DixonColesModel(PoissonModel):
             rho = step / 100.0
             score = 0.0
             valid = True
-            for match in materialized:
+            for match, weight in zip(self._fit_matches, self._fit_weights):
                 home, away, hg, ag = match_values(match)
                 if hg <= 1 and ag <= 1:
                     lh, la = self.expected_goals(home, away)
@@ -45,7 +50,7 @@ class DixonColesModel(PoissonModel):
                     if tau <= 0:
                         valid = False
                         break
-                    score += math.log(tau)
+                    score += weight * math.log(tau)
             if valid and score > best_score:
                 best_score, best_rho = score, rho
         self.rho = best_rho
