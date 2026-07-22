@@ -25,6 +25,18 @@ class ClubHistoryTests(unittest.TestCase):
             with self.assertRaises(ClubHistoryError):
                 list(load_club_history_csv(path))
 
+    def test_skips_scheduled_rows_with_both_scores_blank(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "matches.csv"
+            path.write_text(
+                "Division,MatchDate,MatchTime,HomeTeam,AwayTeam,FTHome,FTAway\n"
+                "BRA,2026-07-24,20:00:00,A,B,,\n"
+                "BRA,2026-07-20,20:00:00,C,D,1,0\n",
+                encoding="utf-8",
+            )
+            rows = list(load_club_history_csv(path, divisions={"BRA"}))
+            self.assertEqual(["C"], [row["home_team"] for row in rows])
+
 
 if __name__ == "__main__":
     unittest.main()

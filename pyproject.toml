@@ -9,7 +9,7 @@ description = "Auditable football lottery probability research and paper-betting
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Private" }
-dependencies = []
+dependencies = ["tzdata>=2025.2; platform_system == 'Windows'"]
 
 [project.optional-dependencies]
 data = ["duckdb>=1.0", "pandas>=2.2"]
@@ -32,4 +32,3 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-

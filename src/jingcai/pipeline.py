@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+import json
+from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from jingcai.backtest import ForecastObservation, brier_score, log_loss
@@ -114,7 +116,11 @@ def build_paper_candidates(
     *,
     safety_margin: float = 0.03,
     prediction_time: datetime | None = None,
+    acceptance_config: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    if acceptance_config is None:
+        acceptance_path = Path(__file__).resolve().parents[2] / "config" / "model-acceptance.json"
+        acceptance_config = json.loads(acceptance_path.read_text(encoding="utf-8"))
     history = list(matches)
     as_of = prediction_time or datetime.now(UTC)
     if as_of.tzinfo is None:
@@ -124,6 +130,13 @@ def build_paper_candidates(
     }
     candidates: list[dict[str, Any]] = []
     for fixture in fixtures:
+        competition_code = str(fixture.get("competition_code", ""))
+        competition_acceptance = acceptance_config.get(competition_code, {})
+        if not isinstance(competition_acceptance, Mapping) or competition_acceptance.get("approved") is not True:
+            continue
+        approved_markets = competition_acceptance.get("markets", {})
+        if not isinstance(approved_markets, Mapping):
+            continue
         if str(fixture["home_team"]) not in trained_teams or str(fixture["away_team"]) not in trained_teams:
             continue
         cutoff = datetime.fromisoformat(str(fixture["sale_cutoff"]))
@@ -147,6 +160,8 @@ def build_paper_candidates(
         for market, odds in odds_by_market.items():
             if market not in prediction or not isinstance(odds, Mapping):
                 raise ValueError(f"unknown or invalid odds market: {market}")
+            if approved_markets.get(market) is not True:
+                continue
             market_probabilities = prediction[market]
             market_baseline = remove_overround({str(k): float(v) for k, v in odds.items()})
             for outcome, decimal_odds in odds.items():

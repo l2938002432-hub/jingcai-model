@@ -49,6 +49,7 @@ class PipelineTests(unittest.TestCase):
         fixtures = [
             {
                 "match_id": "m1",
+                "competition_code": "NTL",
                 "home_team": "A",
                 "away_team": "B",
                 "handicap": 0,
@@ -71,6 +72,7 @@ class PipelineTests(unittest.TestCase):
         fixtures = [
             {
                 "match_id": "m1",
+                "competition_code": "NTL",
                 "home_team": "A",
                 "away_team": "B",
                 "odds_as_of": "2026-07-22T10:00:00+00:00",
@@ -90,6 +92,7 @@ class PipelineTests(unittest.TestCase):
     def test_paper_candidates_reject_stale_or_future_information(self) -> None:
         fixture = {
             "match_id": "m1",
+            "competition_code": "NTL",
             "home_team": "A",
             "away_team": "B",
             "odds_as_of": "2026-07-22T10:00:00+00:00",
@@ -110,7 +113,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_unknown_teams_never_generate_recommendations(self) -> None:
         fixture = {
-            "match_id": "m2", "home_team": "UNKNOWN", "away_team": "B",
+            "match_id": "m2", "competition_code": "NTL", "home_team": "UNKNOWN", "away_team": "B",
             "odds_as_of": "2026-07-22T10:00:00+00:00",
             "sale_cutoff": "2026-07-22T12:00:00+00:00",
             "odds": {"match_result": {"home": 10.0, "draw": 10.0, "away": 10.0}},
@@ -118,6 +121,32 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual([], build_paper_candidates(
             synthetic_matches(), [fixture], prediction_time=datetime(2026, 7, 22, 11, tzinfo=UTC)
         ))
+
+    def test_unapproved_high_ev_correct_score_is_blocked(self) -> None:
+        fixture = {
+            "match_id": "m3", "competition_code": "NTL", "home_team": "A", "away_team": "B",
+            "odds_as_of": "2026-07-22T10:00:00+00:00",
+            "sale_cutoff": "2026-07-22T12:00:00+00:00",
+            "odds": {"correct_score": {"1:0": 1000.0}},
+        }
+        self.assertEqual([], build_paper_candidates(
+            synthetic_matches(), [fixture], prediction_time=datetime(2026, 7, 22, 11, tzinfo=UTC)
+        ))
+
+    def test_explicitly_approved_match_result_can_pass(self) -> None:
+        fixture = {
+            "match_id": "m4", "competition_code": "TEST", "home_team": "A", "away_team": "B",
+            "odds_as_of": "2026-07-22T10:00:00+00:00",
+            "sale_cutoff": "2026-07-22T12:00:00+00:00",
+            "odds": {"match_result": {"home": 10.0, "draw": 10.0, "away": 10.0}},
+        }
+        acceptance = {"TEST": {"approved": True, "markets": {"match_result": True}}}
+        candidates = build_paper_candidates(
+            synthetic_matches(), [fixture], acceptance_config=acceptance,
+            prediction_time=datetime(2026, 7, 22, 11, tzinfo=UTC),
+        )
+        self.assertEqual(1, len(candidates))
+        self.assertEqual("match_result", candidates[0]["market"])
 
 
 if __name__ == "__main__":

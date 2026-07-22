@@ -19,6 +19,14 @@
     "source_url": "https://github.com/openfootball",
     "license": "CC0"
   },
+  "uefa_public_matches": {
+    "purpose": "internal validation of UEFA Champions League qualifying rounds and regular-time scores",
+    "production_status": "research_snapshot",
+    "source_url": "https://match.uefa.com/v5/matches",
+    "attribution": "UEFA public match feed",
+    "public_redistribution": false,
+    "max_requests_per_minute": 6
+  },
   "football_data_co_uk": {
     "purpose": "offline historical training and probability validation",
     "production_status": "research",

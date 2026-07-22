@@ -29,6 +29,10 @@ def load_club_history_csv(
             division = row["Division"].strip()
             if divisions and division not in divisions:
                 continue
+            # The upstream file also contains scheduled fixtures. A pair of
+            # blank scores means "not completed", not a corrupt result.
+            if not (row["FTHome"] or "").strip() and not (row["FTAway"] or "").strip():
+                continue
             try:
                 match_date = datetime.fromisoformat(row["MatchDate"].strip()).date()
                 if since_date and match_date < since_date:
