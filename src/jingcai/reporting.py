@@ -54,3 +54,32 @@ def write_report(path: str | Path, content: str) -> Path:
     output.write_text(content, encoding="utf-8")
     return output
 
+
+def render_probability_report(result: Mapping[str, Any]) -> str:
+    market_titles = {
+        "match_result": "胜平负",
+        "handicap_result": f"让球胜平负（{int(result.get('handicap', 0)):+d}）",
+        "total_goals": "总进球",
+        "correct_score": "比分",
+        "half_full": "半全场",
+    }
+    sections: list[str] = []
+    for key, title in market_titles.items():
+        probabilities = result.get(key, {})
+        ordered = sorted(probabilities.items(), key=lambda item: item[1], reverse=True)
+        rows = "".join(
+            f"<tr><td>{html.escape(str(outcome))}</td><td>{float(probability):.2%}</td></tr>"
+            for outcome, probability in ordered
+        )
+        sections.append(f"<section><h2>{html.escape(title)}</h2><table>{rows}</table></section>")
+    fixture = f"{result.get('home_team', '')} vs {result.get('away_team', '')}"
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="robots" content="noindex"><title>{html.escape(fixture)} 概率研究</title><style>
+body{{font-family:system-ui;max-width:1100px;margin:2rem auto;padding:0 1rem;color:#172033}}
+.notice{{background:#fff4d6;padding:1rem;border-radius:10px}}.markets{{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem}}
+section{{border:1px solid #e0e6ef;border-radius:10px;padding:1rem}}table{{width:100%;border-collapse:collapse}}td{{padding:.45rem;border-bottom:1px solid #eee}}
+td:last-child{{text-align:right;font-variant-numeric:tabular-nums}}</style></head><body>
+<h1>{html.escape(fixture)}</h1><div class="notice"><strong>状态：{html.escape(str(result.get('state', 'RESEARCH')))}</strong><br>
+当前只展示历史模型研究概率，没有可信竞彩奖金时不计算 ROI，也不构成正式投注建议。</div>
+<div class="markets">{''.join(sections)}</div><p><small>模型：{html.escape(str(result.get('model', '')))}；生成：{html.escape(str(result.get('generated_at', '')))}</small></p>
+</body></html>"""

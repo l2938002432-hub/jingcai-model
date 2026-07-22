@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import argparse
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from datetime import UTC, datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jingcai import __version__
-from jingcai.reporting import render_daily_report, write_report
+from jingcai.pipeline import predict_all_markets, walk_forward_1x2
+from jingcai.providers.football_data import load_football_data_csv
+from jingcai.reporting import render_daily_report, render_probability_report, write_report
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -15,7 +21,48 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("status", help="显示当前发布状态")
     demo = subparsers.add_parser("demo-report", help="生成不含真实推荐的示例报告")
     demo.add_argument("--output", default="reports/demo.html")
+    backtest = subparsers.add_parser("backtest-history", help="对 Football-Data CSV 做时间滚动概率回测")
+    _add_history_args(backtest)
+    backtest.add_argument("--min-train", type=int, default=30)
+    predict = subparsers.add_parser("predict", help="用历史 CSV 训练并输出五类玩法研究概率")
+    _add_history_args(predict)
+    predict.add_argument("--home", required=True)
+    predict.add_argument("--away", required=True)
+    predict.add_argument("--handicap", type=int, default=0)
+    predict.add_argument("--output")
+    serve = subparsers.add_parser("serve", help="启动本地只读报告网页")
+    serve.add_argument("--directory", default="reports")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8765)
     return parser
+
+
+def _add_history_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--csv", required=True)
+    parser.add_argument("--season", required=True)
+    parser.add_argument("--competition")
+    parser.add_argument("--source-timezone", default="UTC")
+
+
+def _load_history(args: argparse.Namespace) -> list[dict[str, object]]:
+    timezone_name = args.source_timezone.strip()
+    if timezone_name.upper() in {"UTC", "ETC/UTC", "Z"}:
+        source_timezone = UTC
+    else:
+        try:
+            source_timezone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError as exc:
+            raise SystemExit(
+                f"时区 {timezone_name!r} 不可用；请安装 tzdata，或先使用 --source-timezone UTC"
+            ) from exc
+    return list(
+        load_football_data_csv(
+            args.csv,
+            season=args.season,
+            competition=args.competition,
+            source_timezone=source_timezone,
+        )
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,9 +87,40 @@ def main(argv: list[str] | None = None) -> int:
         output = write_report(args.output, content)
         print(output.resolve())
         return 0
+    if args.command == "backtest-history":
+        result = walk_forward_1x2(_load_history(args), min_train=args.min_train)
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "predict":
+        result = predict_all_markets(
+            _load_history(args), home_team=args.home, away_team=args.away, handicap=args.handicap
+        )
+        if args.output:
+            output = Path(args.output)
+            if output.suffix.lower() == ".html":
+                write_report(output, render_probability_report(result))
+            else:
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(output.resolve())
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "serve":
+        directory = Path(args.directory).resolve()
+        directory.mkdir(parents=True, exist_ok=True)
+        handler = partial(SimpleHTTPRequestHandler, directory=str(directory))
+        server = ThreadingHTTPServer((args.host, args.port), handler)
+        print(f"http://{args.host}:{args.port}/")
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()
+        return 0
     return 2
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

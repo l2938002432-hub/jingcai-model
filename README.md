@@ -15,7 +15,8 @@ $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -v
 python -m jingcai status
 python -m jingcai demo-report --output reports\demo.html
+python -m jingcai predict --csv path\to\league.csv --season 2025-26 --home "Home" --away "Away" --output reports\prediction.html
+python -m jingcai serve --directory reports
 ```
 
 完整设计见 `docs/superpowers/specs/2026-07-22-jingcai-prediction-system-design.md`，实施计划见 `docs/superpowers/plans/2026-07-22-jingcai-implementation-plan.md`。
-
