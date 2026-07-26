@@ -216,7 +216,10 @@ def build_paper_candidates(
                 ev = expected_value(probability, float(decimal_odds), safety_margin)
                 item = {
                     "match_id": str(fixture["match_id"]),
-                    "label": f"{fixture['home_team']} vs {fixture['away_team']}",
+                    "label": (
+                        f"{fixture.get('display_home_team') or fixture['home_team']} vs "
+                        f"{fixture.get('display_away_team') or fixture['away_team']}"
+                    ),
                     "competition": str(
                         fixture.get("competition_name")
                         or fixture.get("competition")
@@ -225,11 +228,12 @@ def build_paper_candidates(
                     "competition_code": competition_code,
                     "match_number": str(
                         fixture.get("match_number")
+                        or fixture.get("match_num")
                         or fixture.get("official_number")
                         or fixture["match_id"]
                     ),
-                    "home_team": str(fixture["home_team"]),
-                    "away_team": str(fixture["away_team"]),
+                    "home_team": str(fixture.get("display_home_team") or fixture["home_team"]),
+                    "away_team": str(fixture.get("display_away_team") or fixture["away_team"]),
                     "scheduled_start": str(
                         fixture.get("scheduled_start")
                         or fixture.get("kickoff")

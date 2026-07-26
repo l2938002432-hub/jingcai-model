@@ -290,7 +290,7 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"daily-live 安全拒绝: {exc}") from exc
         report = render_daily_report(
             generated_at=now, model_state="PAPER_ONLY", candidates=candidates,
-            data_fresh=True, source_as_of=source_as_of,
+            data_fresh=True, source_as_of=source_as_of, fixtures=fixtures,
         )
         output = write_report(args.output, report)
         print(json.dumps({

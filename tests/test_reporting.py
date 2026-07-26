@@ -7,6 +7,28 @@ from jingcai.reporting import render_daily_report, render_probability_report
 
 
 class ReportingTests(unittest.TestCase):
+    def test_daily_report_lists_all_official_fixtures_and_five_markets(self) -> None:
+        fixture = {
+            "match_id": "m1", "match_num": "周日001", "competition": "巴甲",
+            "home_team": "Flamengo", "away_team": "Sao Paulo",
+            "display_home_team": "弗拉门戈", "display_away_team": "圣保罗",
+            "kickoff": "2026-07-27T05:30:00+08:00",
+            "sale_cutoff": "2026-07-27T05:20:00+08:00", "handicap": -1,
+            "odds": {
+                "match_result": {"home": 1.7, "draw": 3.5, "away": 4.2},
+                "handicap_result": {"home": 2.9, "draw": 3.4, "away": 2.0},
+                "correct_score": {"1:0": 7.0},
+                "total_goals": {"2": 3.2},
+                "half_full": {"HH": 2.8},
+            },
+        }
+        report = render_daily_report(
+            generated_at=datetime(2026, 7, 26, tzinfo=UTC), model_state="PAPER_ONLY", candidates=[],
+            data_fresh=True, fixtures=[fixture],
+        )
+        for text in ("周日001", "弗拉门戈", "圣保罗", "胜平负", "让球胜平负（-1）", "比分", "总进球", "半全场"):
+            self.assertIn(text, report)
+
     def test_paper_only_never_labels_candidate_as_live(self) -> None:
         report = render_daily_report(
             generated_at=datetime(2026, 7, 22, tzinfo=UTC),

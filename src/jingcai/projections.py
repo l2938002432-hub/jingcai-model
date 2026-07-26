@@ -6,11 +6,15 @@ from typing import Any, Iterable, Mapping
 FIXTURE_FIELDS = (
     "match_id",
     "match_number",
+    "match_num",
     "competition",
     "competition_code",
     "home_team",
     "away_team",
+    "display_home_team",
+    "display_away_team",
     "scheduled_start",
+    "kickoff",
     "sale_cutoff",
     "sale_cutoff_estimated",
     "odds_as_of",
@@ -84,4 +88,3 @@ def public_release_projection(
     if model_settlement is not None:
         projected["model_settlement"] = _pick(model_settlement, SETTLEMENT_FIELDS)
     return projected
-

@@ -78,6 +78,7 @@ def render_daily_report(
     *, generated_at: datetime, model_state: str,
     candidates: Sequence[Mapping[str, Any]], data_fresh: bool,
     source_as_of: datetime | None = None,
+    fixtures: Sequence[Mapping[str, Any]] = (),
 ) -> str:
     can_recommend = data_fresh and model_state in ALLOWED_RECOMMENDATION_STATES
     report_date = (source_as_of or generated_at).date().isoformat()
@@ -143,6 +144,43 @@ def render_daily_report(
     candidate_json = _safe_json(display_candidates)
     fresh_class = "ok" if data_fresh else "danger"
     recommend_class = "" if can_recommend else " research"
+    fixture_cards: list[str] = []
+    for fixture in fixtures:
+        home = str(fixture.get("display_home_team") or fixture.get("home_team", "主队"))
+        away = str(fixture.get("display_away_team") or fixture.get("away_team", "客队"))
+        number = str(fixture.get("match_number") or fixture.get("match_num") or fixture.get("match_id", ""))
+        competition = str(fixture.get("competition", ""))
+        kickoff = str(fixture.get("scheduled_start") or fixture.get("kickoff") or "未提供")
+        cutoff = str(fixture.get("sale_cutoff", "未提供"))
+        market_blocks: list[str] = []
+        odds_by_market = fixture.get("odds", {})
+        if isinstance(odds_by_market, Mapping):
+            for market in ("match_result", "handicap_result", "correct_score", "total_goals", "half_full"):
+                values = odds_by_market.get(market, {})
+                if not isinstance(values, Mapping) or not values:
+                    continue
+                market_name = MARKET_NAMES.get(market, market)
+                if market == "handicap_result":
+                    market_name += f"（{int(fixture.get('handicap', 0)):+d}）"
+                options = []
+                for outcome, odd in values.items():
+                    outcome_text = OUTCOME_NAMES.get(str(outcome), str(outcome))
+                    if market == "total_goals":
+                        outcome_text = f"{outcome}球"
+                    options.append(
+                        f"<span><b>{html.escape(outcome_text)}</b> {float(odd):.2f}</span>"
+                    )
+                market_blocks.append(
+                    f"<div class='market-row'><strong>{html.escape(market_name)}</strong>"
+                    f"<div>{''.join(options)}</div></div>"
+                )
+        fixture_cards.append(
+            f"""<article class="fixture-card"><div class="fixture-head">
+<div><b>{html.escape(number)} · {html.escape(competition)}</b>
+<h3>{html.escape(home)} <span>vs</span> {html.escape(away)}</h3></div>
+<div class="fixture-time">开赛 {html.escape(kickoff)}<br>停售 {html.escape(cutoff)}</div></div>
+<div class="market-list">{''.join(market_blocks) or '<p>暂无在售玩法</p>'}</div></article>"""
+        )
 
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -162,7 +200,9 @@ dl{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:12px 0}}dl d
 .budget-grid{{display:grid;grid-template-columns:minmax(220px,320px) 1fr;gap:18px}}label{{font-weight:700}}input{{display:block;width:100%;min-height:44px;margin-top:7px;border:1px solid #98a2b3;border-radius:9px;padding:9px 11px;font:inherit}}input:focus{{outline:3px solid #b9d2ff;border-color:var(--brand)}}
 .error{{min-height:1.5em;color:var(--danger);font-size:.88rem}}.results{{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}}.result{{background:#f8faff;border-radius:10px;padding:10px}}.result strong{{display:block;font-size:1.08rem}}.allocation{{margin-top:12px;padding:0;list-style:none}}.allocation li{{padding:8px 0;border-bottom:1px solid var(--line)}}
 .empty{{text-align:center;padding:30px 12px;color:var(--muted)}}footer{{padding:8px 2px 28px;color:var(--muted);font-size:.84rem}}
+.fixture-list{{display:grid;gap:12px}}.fixture-card{{border:1px solid var(--line);border-radius:12px;padding:14px}}.fixture-head{{display:flex;justify-content:space-between;gap:16px}}.fixture-head h3 span{{color:var(--muted);font-weight:400}}.fixture-time{{text-align:right;color:var(--muted);font-size:.82rem}}.market-list{{display:grid;gap:7px;margin-top:10px}}.market-row{{display:grid;grid-template-columns:130px 1fr;gap:10px;padding:8px;background:#f8faff;border-radius:8px}}.market-row div{{display:flex;flex-wrap:wrap;gap:6px 14px}}.market-row span{{white-space:nowrap}}
 @media(max-width:760px){{.shell{{padding:14px}}header{{display:block}}.dashboard{{grid-template-columns:1fr 1fr}}.dashboard .status{{grid-column:1/-1}}.table-wrap{{display:none}}.cards{{display:grid;gap:12px}}.match-card{{border:1px solid var(--line);border-radius:12px;padding:14px}}.budget-grid{{grid-template-columns:1fr}}.results{{grid-template-columns:1fr 1fr}}}}
+@media(max-width:760px){{.fixture-head{{display:block}}.fixture-time{{text-align:left;margin-top:6px}}.market-row{{grid-template-columns:1fr}}}}
 @media(max-width:360px){{.dashboard,.results{{grid-template-columns:1fr}}.dashboard .status{{grid-column:auto}}}}
 </style></head><body><main class="shell">
 <header><div><p class="meta">报告日期 {report_date}</p><h1>竞彩决策驾驶舱</h1></div>
@@ -176,6 +216,9 @@ dl{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:12px 0}}dl d
 <section class="panel"><h2>数据状态</h2><p>生成时间：{html.escape(generated_text)}</p>
 <p>官方数据时间：{html.escape(source_text)}</p>
 <div id="history-alert" class="history-alert" role="status">你正在查看历史报告，数据和奖金可能已变化，请勿当作今日建议。</div></section>
+<section class="panel"><h2>今日全部竞彩比赛</h2>
+<p class="hint">以下按竞彩官方中文名称展示全部在售比赛和五类玩法参考奖金；未通过模型验收的玩法只展示，不推荐。</p>
+<div class="fixture-list">{''.join(fixture_cards) or '<div class="empty">暂无官方在售比赛</div>'}</div></section>
 <section class="panel"><h2>候选详情</h2>{empty}
 <div class="table-wrap"><table><thead><tr><th>比赛</th><th>玩法与选择</th><th>模型概率</th><th>参考奖金</th><th>保守 EV</th><th>停售</th><th>状态</th></tr></thead>
 <tbody>{table_body}</tbody></table></div><div class="cards">{''.join(cards)}</div></section>

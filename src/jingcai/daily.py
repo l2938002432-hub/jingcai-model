@@ -51,6 +51,8 @@ def canonicalize_teams(
     fixture_rows = [dict(row) for row in fixtures]
     for rows in (history_rows, fixture_rows):
         for row in rows:
+            row.setdefault("display_home_team", str(row["home_team"]))
+            row.setdefault("display_away_team", str(row["away_team"]))
             row["home_team"] = resolver.canonical(str(row["home_team"]))
             row["away_team"] = resolver.canonical(str(row["away_team"]))
     return history_rows, fixture_rows
