@@ -42,6 +42,13 @@ jobs:
           key: daily-notification-${{ steps.run-date.outputs.date }}-${{ github.run_id }}
           restore-keys: |
             daily-notification-${{ steps.run-date.outputs.date }}-
+      - name: Restore today's relayed official snapshot
+        uses: actions/cache@v4
+        with:
+          path: data/snapshots/relay.json
+          key: official-snapshot-${{ steps.run-date.outputs.date }}-${{ github.run_id }}
+          restore-keys: |
+            official-snapshot-${{ steps.run-date.outputs.date }}-
       - name: Download free historical inputs
         shell: bash
         run: |
