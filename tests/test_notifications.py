@@ -8,6 +8,7 @@ from jingcai.notifications import (
     NotificationResult,
     send_configured,
     send_feishu,
+    send_pushplus,
     send_serverchan,
     send_wecom,
 )
@@ -143,6 +144,41 @@ class NotificationTests(unittest.TestCase):
         self.assertEqual("serverchan", result.channel)
         self.assertIn("title=", captured["body"])
         self.assertTrue(captured["url"].endswith("/SCT_TEST_KEY.send"))
+
+    def test_pushplus_uses_json_without_token_in_url(self) -> None:
+        captured = {}
+
+        class PushPlusResponse(FakeResponse):
+            def read(self):
+                return b'{"code": 200, "msg": "success"}'
+
+        def sender(request, timeout):
+            captured["url"] = request.full_url
+            captured["body"] = json.loads(request.data)
+            captured["timeout"] = timeout
+            return PushPlusResponse()
+
+        result = send_pushplus("PUSHPLUS_TEST_TOKEN", "竞彩日报", "研究候选", sender)
+        self.assertEqual("pushplus", result.channel)
+        self.assertEqual("https://www.pushplus.plus/send", captured["url"])
+        self.assertEqual("PUSHPLUS_TEST_TOKEN", captured["body"]["token"])
+        self.assertEqual("wechat", captured["body"]["channel"])
+        self.assertEqual(10, captured["timeout"])
+
+    def test_pushplus_is_an_independent_deduplicated_channel(self) -> None:
+        store = MemoryDedupeStore()
+        env = {"FEISHU_WEBHOOK_URL": "https://example.invalid/hook", "PUSHPLUS_TOKEN": "TOKEN"}
+        with patch.dict(os.environ, env, clear=True), patch(
+            "jingcai.notifications.send_feishu", side_effect=RuntimeError("offline")
+        ), patch(
+            "jingcai.notifications.send_pushplus", return_value=NotificationResult("pushplus", 200)
+        ) as pushplus:
+            first = send_configured("竞彩日报", "研究候选", dedupe_key="daily", dedupe_store=store)
+            second = send_configured("竞彩日报", "研究候选", dedupe_key="daily", dedupe_store=store)
+        self.assertEqual(("pushplus",), tuple(item.channel for item in first.successes))
+        self.assertEqual(1, pushplus.call_count)
+        self.assertEqual((), second.successes)
+        self.assertEqual(("feishu",), tuple(item.channel for item in second.failures))
 
 
 if __name__ == "__main__":

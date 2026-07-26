@@ -59,6 +59,24 @@ class DailyCloudRunTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "one or more"):
                 run(Path(directory), fetcher=lambda: PAYLOAD, live_runner=self._runner, notifier=notify)
 
+    def test_uses_validated_local_snapshot_without_fetching(self) -> None:
+        def no_fetch():
+            raise AssertionError("network fetch must not run for a relayed snapshot")
+
+        def notify(*args, **kwargs):
+            return NotificationSummary(
+                ("feishu",), (NotificationResult("feishu", 200),),
+                dedupe_key=kwargs["dedupe_key"],
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = Path(directory) / "relay.json"
+            snapshot.write_text(json.dumps(PAYLOAD), encoding="utf-8")
+            run(
+                Path(directory) / "out", fetcher=no_fetch, live_runner=self._runner,
+                notifier=notify, snapshot_json=snapshot,
+            )
+
     def test_summary_is_structured_and_contains_research_warning(self) -> None:
         summary = format_summary({
             "report_date": "2026-07-23", "fixtures": 6, "candidates": 2,

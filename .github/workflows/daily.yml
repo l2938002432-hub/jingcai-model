@@ -3,6 +3,15 @@ on:
   schedule:
     - cron: "25 2 * * *" # 10:25 Asia/Shanghai
   workflow_dispatch:
+    inputs:
+      snapshot_gzip_base64:
+        description: "Optional gzip+base64 official snapshot (max 60000 chars)"
+        required: false
+        type: string
+      snapshot_sha256:
+        description: "Required SHA-256 of expanded canonical JSON when snapshot is supplied"
+        required: false
+        type: string
 permissions:
   contents: read
   pages: write
@@ -51,6 +60,14 @@ jobs:
               "https://match.uefa.com/v5/matches?competitionId=1&seasonYear=${year}&limit=500&offset=0&order=ASC" \
               --output "data/raw/uefa/ucl-${year}.json"
           done
+      - name: Validate relayed official snapshot
+        if: ${{ inputs.snapshot_gzip_base64 != '' }}
+        env:
+          SPORTTERY_SNAPSHOT_GZIP_BASE64: ${{ inputs.snapshot_gzip_base64 }}
+          SPORTTERY_SNAPSHOT_SHA256: ${{ inputs.snapshot_sha256 }}
+          SPORTTERY_SNAPSHOT_OUTPUT: data/snapshots/relay.json
+          PYTHONPATH: src
+        run: python scripts/decode_relay_snapshot.py
       - name: Fetch, archive and notify
         env:
           PYTHONPATH: src
@@ -58,10 +75,15 @@ jobs:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           WECOM_WEBHOOK_URL: ${{ secrets.WECOM_WEBHOOK_URL }}
           SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
         shell: bash
         run: |
+          snapshot_args=()
+          if [ -f data/snapshots/relay.json ]; then
+            snapshot_args=(--snapshot-json data/snapshots/relay.json)
+          fi
           for attempt in 1 2 3; do
-            if python scripts/daily_cloud_run.py --output-dir artifacts/daily; then
+            if python scripts/daily_cloud_run.py --output-dir artifacts/daily "${snapshot_args[@]}"; then
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then sleep 20; fi

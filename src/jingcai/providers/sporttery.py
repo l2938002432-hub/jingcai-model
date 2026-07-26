@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -30,29 +31,65 @@ def validate_payload(payload: object) -> None:
     if not isinstance(payload, Mapping) or payload.get("success") is not True:
         raise SportteryError("official feed did not report success")
     value = payload.get("value")
-    if not isinstance(value, Mapping) or not isinstance(value.get("matchInfoList"), list):
+    if not isinstance(value, Mapping):
         raise SportteryError("unexpected official feed schema")
+    groups = value.get("matchInfoList")
+    if not isinstance(groups, list):
+        raise SportteryError("unexpected official feed schema")
+    for group in groups:
+        if not isinstance(group, Mapping) or not isinstance(group.get("subMatchList"), list):
+            raise SportteryError("unexpected official feed schema")
+        if not all(isinstance(match, Mapping) for match in group["subMatchList"]):
+            raise SportteryError("unexpected official feed schema")
+
+
+def _decode_payload(raw: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(raw)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise SportteryError("official feed returned invalid JSON") from exc
+    validate_payload(payload)
+    return dict(payload)
+
+
+def _curl_command(timeout: float) -> list[str]:
+    executable = "curl.exe" if os.name == "nt" else "curl"
+    return [
+        executable,
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--max-time",
+        str(timeout),
+        "-H",
+        f"Accept: {HEADERS['Accept']}",
+        "-H",
+        f"Referer: {HEADERS['Referer']}",
+        "-H",
+        f"User-Agent: {HEADERS['User-Agent']}",
+        UPSTREAM_URL,
+    ]
 
 
 def fetch_sporttery_payload(*, timeout: float = 20.0) -> dict[str, Any]:
+    if timeout <= 0:
+        raise ValueError("timeout must be positive")
     try:
         with urlopen(Request(UPSTREAM_URL, headers=HEADERS), timeout=timeout) as response:
-            payload = json.load(response)
+            return _decode_payload(response.read().decode("utf-8"))
     except Exception as exc:
         # Some managed Windows environments block Python TLS while allowing the
         # system curl binary. Keep this fixed-host fallback non-shelling.
         try:
             completed = subprocess.run(
-                ["curl.exe", "-sS", "--max-time", str(int(timeout)),
-                 "-H", f"Referer: {HEADERS['Referer']}",
-                 "-H", f"User-Agent: {HEADERS['User-Agent']}", UPSTREAM_URL],
+                _curl_command(timeout),
                 check=True, capture_output=True, text=True, encoding="utf-8",
             )
-            payload = json.loads(completed.stdout)
-        except Exception as fallback_exc:
-            raise SportteryError(f"official Sporttery feed unavailable: {exc}") from fallback_exc
-    validate_payload(payload)
-    return payload
+            return _decode_payload(completed.stdout)
+        except (OSError, subprocess.SubprocessError, SportteryError) as fallback_exc:
+            raise SportteryError(
+                f"official Sporttery feed unavailable: {type(exc).__name__}"
+            ) from fallback_exc
 
 
 def save_snapshot(payload: Mapping[str, Any], path: str | Path) -> Path:

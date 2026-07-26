@@ -126,6 +126,33 @@ def send_serverchan(send_key: str, title: str, text: str, sender: Sender = urlop
         return NotificationResult("serverchan", status)
 
 
+def send_pushplus(token: str, title: str, text: str, sender: Sender = urlopen) -> NotificationResult:
+    """Push one consolidated notification to personal WeChat via PushPlus."""
+    clean_token = token.strip()
+    if not clean_token or any(char in clean_token for char in "/?#&"):
+        raise ValueError("invalid PushPlus token")
+    payload = {
+        "token": clean_token,
+        "title": title,
+        "content": text,
+        "template": "markdown",
+        "channel": "wechat",
+    }
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = Request(
+        "https://www.pushplus.plus/send",
+        data=body,
+        headers={"Content-Type": "application/json; charset=utf-8"},
+        method="POST",
+    )
+    with sender(request, timeout=10) as response:
+        status = int(response.status)
+        response_payload = _response_payload(response)
+        if not 200 <= status < 300 or response_payload.get("code") not in (200, "200"):
+            raise RuntimeError(f"pushplus notification failed with HTTP {status}")
+        return NotificationResult("pushplus", status)
+
+
 def send_configured(
     title: str,
     text: str,
@@ -146,6 +173,8 @@ def send_configured(
         configured.append(("wecom", lambda url=url: send_wecom(url, title, text)))
     if key := os.environ.get("SERVERCHAN_SENDKEY", "").strip():
         configured.append(("serverchan", lambda key=key: send_serverchan(key, title, text)))
+    if token := os.environ.get("PUSHPLUS_TOKEN", "").strip():
+        configured.append(("pushplus", lambda token=token: send_pushplus(token, title, text)))
 
     channel_names = tuple(channel for channel, _send in configured)
     if not configured and require_configured:

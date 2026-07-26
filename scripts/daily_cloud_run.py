@@ -77,9 +77,13 @@ def run(
     fetcher: Callable[[], dict[str, Any]] = fetch_sporttery_payload,
     live_runner: Callable[[list[str]], dict[str, Any]] = _run_daily_live,
     notifier: Callable[..., NotificationSummary] = send_configured,
+    snapshot_json: Path | None = None,
 ) -> tuple[Path, Path, Path, NotificationSummary]:
     """Run one production cycle; raises unless notification was delivered/already sent."""
-    payload = fetcher()
+    if snapshot_json is None:
+        payload = fetcher()
+    else:
+        payload = json.loads(snapshot_json.read_text(encoding="utf-8"))
     source_as_of = parse_official_update(payload)
     china_timezone = timezone(timedelta(hours=8))
     report_date = source_as_of.astimezone(china_timezone).date().isoformat()
@@ -144,10 +148,12 @@ def main() -> int:
     parser.add_argument("--club-history-csv", type=Path, default=Path("data/raw/club-history/Matches.csv"))
     parser.add_argument("--club-elo-csv", type=Path, default=Path("data/raw/club-history/EloRatings.csv"))
     parser.add_argument("--uefa-history-dir", type=Path, default=Path("data/raw/uefa"))
+    parser.add_argument("--snapshot-json", type=Path)
     args = parser.parse_args()
     html_path, json_path, raw_path, delivery = run(
         args.output_dir, csv_path=args.csv, club_history_csv=args.club_history_csv,
         club_elo_csv=args.club_elo_csv, uefa_history_dir=args.uefa_history_dir,
+        snapshot_json=args.snapshot_json,
     )
     summary = (
         f"html={html_path}\njson={json_path}\nraw={raw_path}\n"
