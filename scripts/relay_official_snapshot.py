@@ -29,9 +29,14 @@ def dispatch(
     *,
     repository: str,
     branch: str = "main",
+    snapshot_json: Path | None = None,
     runner: object = subprocess.run,
 ) -> str:
-    payload = fetch_sporttery_payload()
+    payload = (
+        json.loads(snapshot_json.read_text(encoding="utf-8"))
+        if snapshot_json is not None
+        else fetch_sporttery_payload()
+    )
     encoded, digest = encode_snapshot(payload)
     workflow_inputs = json.dumps(
         {"snapshot_gzip_base64": encoded, "snapshot_sha256": digest},
@@ -65,8 +70,12 @@ def main() -> int:
         help="GitHub repository receiving the validated public snapshot",
     )
     parser.add_argument("--ref", default="main")
+    parser.add_argument(
+        "--snapshot-json", type=Path,
+        help="Use a locally fetched official JSON snapshot instead of Python network access",
+    )
     args = parser.parse_args()
-    url = dispatch(repository=args.repo, branch=args.ref)
+    url = dispatch(repository=args.repo, branch=args.ref, snapshot_json=args.snapshot_json)
     print(url or "cloud workflow dispatched")
     return 0
 
