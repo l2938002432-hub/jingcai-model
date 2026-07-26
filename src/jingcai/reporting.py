@@ -3,12 +3,28 @@ from __future__ import annotations
 import html
 import json
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 
 ALLOWED_RECOMMENDATION_STATES = {"LIMITED_LIVE", "LIVE"}
+MODEL_STATE_LABELS = {
+    "RESEARCH": "研究中",
+    "PAPER_ONLY": "模拟验证中",
+    "LIMITED_LIVE": "小额验证",
+    "LIVE": "正式运行",
+    "PAUSED": "已暂停",
+    "ROLLED_BACK": "已回滚",
+    "PAUSED_CLOUD": "云端已暂停",
+}
+CHINA_TIMEZONE = timezone(timedelta(hours=8))
+
+
+def _china_time(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.strftime("%Y-%m-%d %H:%M")
+    return value.astimezone(CHINA_TIMEZONE).strftime("%Y-%m-%d %H:%M")
 
 MARKET_NAMES = {
     "match_result": "胜平负",
@@ -65,8 +81,9 @@ def render_daily_report(
 ) -> str:
     can_recommend = data_fresh and model_state in ALLOWED_RECOMMENDATION_STATES
     report_date = (source_as_of or generated_at).date().isoformat()
-    generated_text = generated_at.isoformat()
-    source_text = source_as_of.isoformat() if source_as_of else "未提供"
+    generated_text = _china_time(generated_at)
+    source_text = _china_time(source_as_of) if source_as_of else "未提供"
+    model_state_text = MODEL_STATE_LABELS.get(model_state, model_state)
     status_title = "数据正常" if data_fresh else "数据过期：建议已隐藏"
     conclusion = (
         f"发现 {len(candidates)} 个通过当前筛选的候选，请结合预算与停售时间人工判断。"
@@ -153,7 +170,7 @@ dl{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:12px 0}}dl d
 <section class="panel dashboard">
 <div class="metric status {fresh_class}{recommend_class}"><span>今日结论</span><strong>{html.escape(conclusion)}</strong></div>
 <div class="metric"><span>研究候选</span><strong>{len(candidates)} 个</strong></div>
-<div class="metric"><span>模型状态</span><strong>{html.escape(model_state)}</strong></div>
+<div class="metric"><span>模型状态</span><strong>{html.escape(model_state_text)}</strong></div>
 <div class="metric"><span>数据状态</span><strong>{status_title}</strong></div>
 </section>
 <section class="panel"><h2>数据状态</h2><p>生成时间：{html.escape(generated_text)}</p>

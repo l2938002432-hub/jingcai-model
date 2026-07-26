@@ -122,6 +122,12 @@ class Ledger:
         return records
 
 
+def deterministic_event_id(kind: LedgerKind, event_type: LedgerEventType, key: str) -> str:
+    """Return a stable event identity suitable for retryable writers."""
+    material = f"{kind.value}:{event_type.value}:{key}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
 def freeze_release(model_ledger: Ledger, manifest: ReleaseManifest) -> str:
     if model_ledger.kind is not LedgerKind.MODEL:
         raise ValueError("releases can only be frozen in the model ledger")

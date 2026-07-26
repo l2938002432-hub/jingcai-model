@@ -76,6 +76,79 @@ class PortfolioTests(unittest.TestCase):
         self.assertFalse(result.allowed)
         self.assertIn("unapproved_candidate", result.reasons)
         self.assertIn("risk_blocked", result.reasons)
+        self.assertFalse(result.candidate_gate)
+
+    def test_correlation_haircut_is_audited_and_reduces_joint_return(self) -> None:
+        rows = [candidate(1), candidate(2)]
+        tickets = two_leg_tickets(rows, 2, NOW, CUTOFFS)
+        bundle = TicketBundle("b", tickets, "double", 2, 0)
+        raw = payout_distribution(bundle, rows)
+        adjusted = payout_distribution(
+            bundle,
+            rows,
+            correlation_haircut=0.25,
+            algorithm_version="independent-haircut-v1",
+        )
+        self.assertEqual("independent-haircut-v1", adjusted.algorithm_version)
+        self.assertEqual(0.25, adjusted.correlation_haircut)
+        self.assertEqual(
+            len(adjusted.raw_joint_probabilities),
+            len(adjusted.adjusted_joint_probabilities),
+        )
+        self.assertLess(adjusted.expected_payout, raw.expected_payout)
+        self.assertAlmostEqual(1, sum(adjusted.adjusted_joint_probabilities))
+        for bad in (-0.1, 1.0):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                payout_distribution(bundle, rows, correlation_haircut=bad)
+        with self.assertRaises(ValueError):
+            payout_distribution(bundle, rows, algorithm_version="")
+
+    def test_ticket_generation_fails_closed_when_candidates_are_insufficient(self) -> None:
+        with self.assertRaises(ValueError):
+            two_leg_tickets([candidate(1)], 2, NOW, CUTOFFS)
+        with self.assertRaises(ValueError):
+            system_tickets(
+                [candidate(1), candidate(2)],
+                choose=2,
+                stake_per_ticket=2,
+                created_at=NOW,
+                sale_cutoffs=CUTOFFS,
+            )
+
+    def test_empty_risky_buckets_stay_unused_unless_transferred_to_singles(self) -> None:
+        rows = [candidate(1)]
+        kept = allocate_budget(rows, 20, NOW, CUTOFFS)
+        transferred = allocate_budget(
+            rows, 20, NOW, CUTOFFS, transfer_to_lower_risk=True
+        )
+        self.assertEqual(6, kept.unused_budget)
+        self.assertEqual(0, transferred.unused_budget)
+        self.assertTrue(all(len(ticket.selections) == 1 for ticket in transferred.tickets))
+
+    def test_four_layer_gate_and_ten_percent_pretrade_loss_limit(self) -> None:
+        rows = [candidate(1), candidate(2)]
+        tickets = two_leg_tickets(rows, 2, NOW, CUTOFFS)
+        bundle = TicketBundle("b", tickets, "double", 2, 0)
+        distribution = payout_distribution(bundle, rows)
+        result = gate_bundle(
+            bundle,
+            rows,
+            distribution,
+            GateLimits(
+                20,
+                10,
+                20,
+                bankroll=100,
+                current_drawdown=9,
+                max_drawdown_fraction=0.10,
+            ),
+        )
+        self.assertFalse(result.allowed)
+        self.assertIn("drawdown_limit_exceeded", result.reasons)
+        self.assertTrue(result.candidate_gate)
+        self.assertTrue(result.joint_probability_gate)
+        self.assertTrue(result.rules_gate)
+        self.assertFalse(result.economic_gate)
 
 
 if __name__ == "__main__":

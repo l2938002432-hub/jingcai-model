@@ -13,7 +13,7 @@ on:
         required: false
         type: string
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 concurrency:
@@ -83,6 +83,7 @@ jobs:
           WECOM_WEBHOOK_URL: ${{ secrets.WECOM_WEBHOOK_URL }}
           SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          PUBLIC_REPORT_BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
         shell: bash
         run: |
           snapshot_args=()
@@ -96,12 +97,57 @@ jobs:
             if [ "$attempt" -lt 3 ]; then sleep 20; fi
           done
           exit 1
+      - name: Resolve generated report metadata
+        id: report
+        shell: bash
+        run: |
+          report_json="$(find artifacts/daily -maxdepth 1 -type f -name 'report-*.json' -print -quit)"
+          if [ -z "$report_json" ]; then
+            echo "No generated report metadata found" >&2
+            exit 1
+          fi
+          report_html="$(python -c 'import json,sys,pathlib; p=pathlib.Path(sys.argv[1]); d=json.loads(p.read_text(encoding="utf-8")); print(p.parent / d["html"])' "$report_json")"
+          test -f "$report_html"
+          release_id="$(python -c 'import json,sys,pathlib; print(json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))["release_id"])' "$report_json")"
+          echo "json=$report_json" >> "$GITHUB_OUTPUT"
+          echo "html=$report_html" >> "$GITHUB_OUTPUT"
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+      - name: Restore public report history
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git ls-remote --exit-code --heads origin pages-history >/dev/null 2>&1; then
+            git clone --quiet --depth 1 --branch pages-history \
+              "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" artifacts/site
+          else
+            mkdir -p artifacts/site
+            git -C artifacts/site init --quiet
+            git -C artifacts/site checkout --orphan pages-history
+            git -C artifacts/site remote add origin \
+              "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          fi
       - name: Build public report site
         shell: bash
         run: |
-          mkdir -p artifacts/site
-          cp "artifacts/daily/report-${{ steps.run-date.outputs.date }}.html" artifacts/site/index.html
-          cp "artifacts/daily/report-${{ steps.run-date.outputs.date }}.json" artifacts/site/report.json
+          python scripts/build_public_site.py \
+            --html "${{ steps.report.outputs.html }}" \
+            --json "${{ steps.report.outputs.json }}" \
+            --output-dir artifacts/site \
+            --release-id "${{ steps.report.outputs.release_id }}"
+      - name: Persist sanitized public history
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git -C artifacts/site config user.name "github-actions[bot]"
+          git -C artifacts/site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C artifacts/site add index.html report.json reports
+          if ! git -C artifacts/site diff --cached --quiet; then
+            git -C artifacts/site commit --quiet -m "Publish report ${{ steps.report.outputs.release_id }}"
+          fi
+          git -C artifacts/site push origin pages-history
+          rm -rf artifacts/site/.git
       - name: Upload audit snapshot
         if: always()
         uses: actions/upload-artifact@v4

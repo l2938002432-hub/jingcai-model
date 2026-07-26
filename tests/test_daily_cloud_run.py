@@ -45,6 +45,7 @@ class DailyCloudRunTests(unittest.TestCase):
             self.assertTrue(html.exists())
             self.assertTrue(report_json.exists())
             self.assertTrue(raw.exists())
+            self.assertTrue((Path(directory) / "model-ledger.jsonl").exists())
             report = json.loads(report_json.read_text(encoding="utf-8"))
             self.assertEqual((report["fixtures"], report["candidates"]), (6, 1))
             self.assertEqual("胜平负", report["candidate_details"][0]["market_label"])

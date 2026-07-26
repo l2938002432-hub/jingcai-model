@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 from jingcai.__main__ import main as jingcai_main
 from jingcai.daily import parse_official_update
+from jingcai.ledger import Ledger, LedgerKind, ReleaseManifest, freeze_release
 from jingcai.notifications import NotificationSummary, send_configured
 from jingcai.projections import public_release_projection
 from jingcai.providers.sporttery import fetch_sporttery_payload, normalize_payload, save_snapshot
@@ -161,10 +162,30 @@ def run(
         fixtures=fixture_details,
         candidates=candidate_details,
     )
+    config_path = Path("config/model-acceptance.json")
+    config_sha256 = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    snapshot_sha256 = hashlib.sha256(raw_path.read_bytes()).hexdigest()
+    model_ledger = Ledger(output_dir / "model-ledger.jsonl", LedgerKind.MODEL)
+    ledger_head_hash = freeze_release(
+        model_ledger,
+        ReleaseManifest(
+            release_id=release_id,
+            idempotency_key=release_id,
+            published_at=datetime.fromisoformat(generated_at),
+            source_as_of=source_as_of,
+            snapshot_sha256=snapshot_sha256,
+            model_version="daily-live-v1",
+            config_sha256=config_sha256,
+            rules_version="sporttery-v1",
+            git_sha=os.environ.get("GITHUB_SHA", "local-uncommitted"),
+            candidates=tuple(public_projection["candidates"]),
+        ),
+    )
     report: dict[str, Any] = {
         "schema_version": 1,
         "release_id": release_id,
         "release_hash": release_hash,
+        "ledger_head_hash": ledger_head_hash,
         "report_date": report_date,
         "generated_at": generated_at,
         "source_as_of": live_result.get("source_as_of", source_as_of.isoformat()),

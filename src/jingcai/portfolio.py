@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from itertools import combinations, product
 from math import isfinite, prod
@@ -45,6 +45,9 @@ class GateLimits:
     max_daily_stake: float
     max_match_stake: float
     max_competition_stake: float
+    bankroll: float | None = None
+    current_drawdown: float = 0.0
+    max_drawdown_fraction: float = 0.10
 
     def __post_init__(self) -> None:
         if any(
@@ -56,12 +59,35 @@ class GateLimits:
             )
         ):
             raise ValueError("gate limits must be positive and finite")
+        if self.bankroll is not None and (
+            not isfinite(self.bankroll) or self.bankroll <= 0
+        ):
+            raise ValueError("bankroll must be positive and finite")
+        if not isfinite(self.current_drawdown) or self.current_drawdown < 0:
+            raise ValueError("current_drawdown must be finite and non-negative")
+        if (
+            not isfinite(self.max_drawdown_fraction)
+            or not 0 < self.max_drawdown_fraction <= 1
+        ):
+            raise ValueError("max_drawdown_fraction must be in (0, 1]")
 
 
 @dataclass(frozen=True)
 class GateResult:
     allowed: bool
     reasons: tuple[str, ...]
+    candidate_gate: bool
+    joint_probability_gate: bool
+    rules_gate: bool
+    economic_gate: bool
+
+
+@dataclass(frozen=True)
+class AuditedPayoutDistribution(PayoutDistribution):
+    correlation_haircut: float
+    algorithm_version: str
+    raw_joint_probabilities: tuple[float, ...]
+    adjusted_joint_probabilities: tuple[float, ...]
 
 
 def _validate_ticket_inputs(
@@ -117,7 +143,7 @@ def two_leg_tickets(
     sale_cutoffs: Mapping[str, datetime],
 ) -> tuple[Ticket, ...]:
     if len(candidates) < 2:
-        return ()
+        raise ValueError("at least two candidates are required for 2-leg tickets")
     return tuple(
         _ticket(
             f"double-{index}",
@@ -153,7 +179,16 @@ def payout_distribution(
     candidates: Sequence[Candidate],
     *,
     conservative: bool = True,
-) -> PayoutDistribution:
+    correlation_haircut: float = 0.0,
+    algorithm_version: str = "independent-v1",
+) -> AuditedPayoutDistribution:
+    if (
+        not isfinite(correlation_haircut)
+        or not 0 <= correlation_haircut < 1
+    ):
+        raise ValueError("correlation_haircut must be in [0, 1)")
+    if not algorithm_version:
+        raise ValueError("algorithm_version is required")
     by_match = {row.selection.match_id: row for row in candidates}
     if len(by_match) != len(candidates):
         raise ValueError("candidates must contain at most one selection per match")
@@ -165,7 +200,7 @@ def payout_distribution(
     if set(by_match) != selected_matches:
         raise ValueError("candidates must cover bundle matches exactly")
     ordered = [by_match[match_id] for match_id in sorted(by_match)]
-    scenarios: list[PayoutScenario] = []
+    raw_rows: list[tuple[float, float]] = []
     for states in product((False, True), repeat=len(ordered)):
         probabilities = [
             row.conservative_probability if conservative else row.probability
@@ -188,12 +223,34 @@ def payout_distribution(
             if all(wins[selection.match_id] for selection in ticket.selections)
         )
         payout = round_payout(payout)
-        scenarios.append(
-            PayoutScenario(probability, payout, round_payout(payout - bundle.stake))
+        raw_rows.append((probability, payout))
+    raw_probabilities = tuple(row[0] for row in raw_rows)
+    adjusted_probabilities = [
+        probability * (1 - correlation_haircut) if payout > 0 else probability
+        for probability, payout in raw_rows
+    ]
+    removed = 1 - sum(adjusted_probabilities)
+    zero_indexes = [
+        index for index, (_, payout) in enumerate(raw_rows) if payout == 0
+    ]
+    if not zero_indexes:
+        raise ValueError("distribution has no losing scenario for correlation haircut")
+    zero_mass = sum(raw_probabilities[index] for index in zero_indexes)
+    for index in zero_indexes:
+        adjusted_probabilities[index] += (
+            removed * raw_probabilities[index] / zero_mass
         )
+    scenarios = [
+        PayoutScenario(
+            probability,
+            payout,
+            round_payout(payout - bundle.stake),
+        )
+        for probability, (_, payout) in zip(adjusted_probabilities, raw_rows)
+    ]
     expected_payout = sum(row.probability * row.payout for row in scenarios)
     expected_profit = expected_payout - bundle.stake
-    return PayoutDistribution(
+    return AuditedPayoutDistribution(
         tuple(scenarios),
         min(row.payout for row in scenarios),
         max(row.payout for row in scenarios),
@@ -201,6 +258,10 @@ def payout_distribution(
         expected_profit,
         sum(row.probability for row in scenarios if row.payout > 0),
         sum(row.probability for row in scenarios if row.profit > 0),
+        correlation_haircut,
+        algorithm_version,
+        raw_probabilities,
+        tuple(adjusted_probabilities),
     )
 
 
@@ -209,6 +270,8 @@ def allocate_budget(
     total_budget: float,
     created_at: datetime,
     sale_cutoffs: Mapping[str, datetime],
+    *,
+    transfer_to_lower_risk: bool = False,
 ) -> TicketBundle:
     if not isfinite(total_budget) or total_budget <= 0 or total_budget % 2 != 0:
         raise ValueError("total_budget must be a positive multiple of 2 yuan")
@@ -244,6 +307,16 @@ def allocate_budget(
     if not tickets:
         raise ValueError("budget is too small for eligible tickets")
     used = sum(ticket.stake for ticket in tickets)
+    if transfer_to_lower_risk:
+        single_indexes = [
+            index for index, ticket in enumerate(tickets)
+            if len(ticket.selections) == 1
+        ]
+        remaining_units = int((total_budget - used) / 2)
+        for offset in range(remaining_units):
+            index = single_indexes[offset % len(single_indexes)]
+            tickets[index] = replace(tickets[index], stake=tickets[index].stake + 2)
+        used = sum(ticket.stake for ticket in tickets)
     return TicketBundle("allocated", tuple(tickets), "70-20-10-caps", total_budget,
                         total_budget - used)
 
@@ -262,11 +335,34 @@ def gate_bundle(
     }
     candidate_matches = {row.selection.match_id for row in candidates}
     if bundle_matches != candidate_matches or len(candidate_matches) != len(candidates):
-        return GateResult(False, ("candidate_coverage_mismatch",))
+        return GateResult(
+            False,
+            ("candidate_coverage_mismatch",),
+            False,
+            False,
+            False,
+            False,
+        )
     if any(not row.approved for row in candidates):
         reasons.append("unapproved_candidate")
     if any(row.risk_blocked for row in candidates):
         reasons.append("risk_blocked")
+    candidate_gate = not reasons
+    joint_probability_gate = (
+        bool(distribution.algorithm_version)
+        and 0 <= distribution.correlation_haircut < 1
+        and abs(sum(distribution.adjusted_joint_probabilities) - 1) <= 1e-9
+    )
+    if not joint_probability_gate:
+        reasons.append("joint_probability_invalid")
+    rules_gate = all(
+        len(ticket.selections) in (1, 2)
+        and len({selection.match_id for selection in ticket.selections})
+        == len(ticket.selections)
+        for ticket in bundle.tickets
+    )
+    if not rules_gate:
+        reasons.append("rules_invalid")
     if distribution.expected_profit <= 0:
         reasons.append("non_positive_conservative_ev")
     if bundle.stake > limits.max_daily_stake:
@@ -287,4 +383,26 @@ def gate_bundle(
         reasons.append("match_exposure_exceeded")
     if any(value > limits.max_competition_stake for value in by_competition.values()):
         reasons.append("competition_exposure_exceeded")
-    return GateResult(not reasons, tuple(reasons))
+    if limits.bankroll is not None:
+        worst_loss = max(0.0, bundle.stake - distribution.minimum_payout)
+        if (
+            limits.current_drawdown + worst_loss
+            > limits.bankroll * limits.max_drawdown_fraction
+        ):
+            reasons.append("drawdown_limit_exceeded")
+    economic_reasons = {
+        "non_positive_conservative_ev",
+        "daily_exposure_exceeded",
+        "match_exposure_exceeded",
+        "competition_exposure_exceeded",
+        "drawdown_limit_exceeded",
+    }
+    economic_gate = not any(reason in economic_reasons for reason in reasons)
+    return GateResult(
+        not reasons,
+        tuple(reasons),
+        candidate_gate,
+        joint_probability_gate,
+        rules_gate,
+        economic_gate,
+    )
