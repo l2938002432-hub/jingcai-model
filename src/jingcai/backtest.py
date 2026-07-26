@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import log
+from math import isfinite, log
 from statistics import fmean
 from typing import Iterable, Mapping, Sequence
+
+from .domain import SettlementStatus, TicketSettlement
 
 
 @dataclass(frozen=True)
@@ -99,4 +101,35 @@ def fixed_unit_returns(bets: Iterable[BetObservation], unit_stake: float = 1.0) 
     profit = sum(profits)
     payout = stake + profit
     return BacktestReturns(len(rows), sum(row.won for row in rows), stake, payout, profit, profit / stake, drawdown)
+
+
+def ticket_returns(
+    settlements: Iterable[TicketSettlement], *, stakes: Mapping[str, float]
+) -> BacktestReturns:
+    rows = list(settlements)
+    if not rows:
+        raise ValueError("at least one settlement is required")
+    if any(row.status is SettlementStatus.PENDING for row in rows):
+        raise ValueError("pending settlements cannot be included in returns")
+    if set(stakes) != {row.ticket_id for row in rows}:
+        raise ValueError("stakes must cover every settlement exactly")
+    if any(not isfinite(stake) or stake <= 0 for stake in stakes.values()):
+        raise ValueError("stakes must be positive")
+    equity = peak = drawdown = 0.0
+    for row in rows:
+        equity += row.profit
+        peak = max(peak, equity)
+        drawdown = max(drawdown, peak - equity)
+    stake = sum(stakes.values())
+    payout = sum(row.payout for row in rows)
+    profit = sum(row.profit for row in rows)
+    return BacktestReturns(
+        len(rows),
+        sum(row.status is SettlementStatus.WON for row in rows),
+        stake,
+        payout,
+        profit,
+        profit / stake,
+        drawdown,
+    )
 

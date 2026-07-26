@@ -2,7 +2,13 @@ import math
 import unittest
 from datetime import UTC, datetime, timedelta
 
-from jingcai.pipeline import build_paper_candidates, predict_all_markets, walk_forward_1x2
+from jingcai.pipeline import (
+    build_paper_candidates,
+    chinese_market_label,
+    chinese_outcome_label,
+    predict_all_markets,
+    walk_forward_1x2,
+)
 
 
 def synthetic_matches(count: int = 24) -> list[dict[str, object]]:
@@ -27,6 +33,13 @@ def synthetic_matches(count: int = 24) -> list[dict[str, object]]:
 
 
 class PipelineTests(unittest.TestCase):
+    def test_user_facing_market_and_outcome_names_are_chinese(self) -> None:
+        self.assertEqual("胜平负", chinese_market_label("match_result"))
+        self.assertEqual("让球胜平负（-1）", chinese_market_label("handicap_result", -1))
+        self.assertEqual("客胜", chinese_outcome_label("match_result", "away"))
+        self.assertEqual("负平", chinese_outcome_label("half_full", "away_draw"))
+        self.assertEqual("7+球", chinese_outcome_label("total_goals", "7+"))
+
     def test_walk_forward_compares_model_and_baseline_without_roi_claim(self) -> None:
         result = walk_forward_1x2(synthetic_matches(), min_train=12)
         self.assertEqual(12, result.evaluated_matches)
@@ -67,6 +80,9 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(1, len(candidates))
         self.assertGreater(candidates[0]["conservative_ev"], 0)
         self.assertIn("market_probability", candidates[0])
+        self.assertEqual("胜平负", candidates[0]["market_label"])
+        self.assertIn(candidates[0]["outcome_label"], {"主胜", "平", "客胜"})
+        self.assertEqual(("A", "B"), (candidates[0]["home_team"], candidates[0]["away_team"]))
 
     def test_paper_candidates_allow_empty_best_action(self) -> None:
         fixtures = [

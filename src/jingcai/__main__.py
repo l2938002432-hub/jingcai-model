@@ -296,6 +296,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({
             "output": str(output.resolve()), "fixtures": len(fixtures),
             "candidates": len(candidates), "source_as_of": source_as_of.isoformat(),
+            "fixture_details": fixtures,
+            "candidate_details": candidates,
             "cutoff_notice": "sale_cutoff_estimated=true 表示停售时间为开赛前10分钟估算值",
         }, ensure_ascii=False))
         return 0

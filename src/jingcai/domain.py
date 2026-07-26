@@ -165,6 +165,8 @@ class Ticket:
             raise ValueError("ticket_id and at least one selection are required")
         if not isfinite(self.stake) or self.stake <= 0:
             raise ValueError("stake must be positive and finite")
+        if self.stake % 2 != 0:
+            raise ValueError("stake must be an integer multiple of the 2 yuan unit")
         match_ids = [selection.match_id for selection in self.selections]
         if len(match_ids) != len(set(match_ids)):
             raise ValueError("a ticket cannot contain correlated selections from the same match")
@@ -174,6 +176,49 @@ class Ticket:
             require_aware(cutoff, f"sale_cutoffs[{match_id}]")
             if self.created_at > cutoff:
                 raise ValueError("ticket cannot be created after a selected match cutoff")
+
+
+@dataclass(frozen=True)
+class TicketBundle:
+    bundle_id: str
+    tickets: tuple[Ticket, ...]
+    strategy: str
+    budget: float
+    unused_budget: float
+
+    def __post_init__(self) -> None:
+        if not self.bundle_id or not self.strategy or not self.tickets:
+            raise ValueError("bundle identifiers and tickets are required")
+        if len({ticket.ticket_id for ticket in self.tickets}) != len(self.tickets):
+            raise ValueError("ticket IDs must be unique within a bundle")
+        if not isfinite(self.budget) or self.budget <= 0 or self.budget % 2 != 0:
+            raise ValueError("budget must be a positive multiple of 2 yuan")
+        if not isfinite(self.unused_budget) or self.unused_budget < 0:
+            raise ValueError("unused_budget must be finite and non-negative")
+        if abs(sum(ticket.stake for ticket in self.tickets) + self.unused_budget - self.budget) > 1e-9:
+            raise ValueError("ticket stakes and unused budget must equal bundle budget")
+
+    @property
+    def stake(self) -> float:
+        return sum(ticket.stake for ticket in self.tickets)
+
+
+@dataclass(frozen=True)
+class PayoutScenario:
+    probability: float
+    payout: float
+    profit: float
+
+
+@dataclass(frozen=True)
+class PayoutDistribution:
+    scenarios: tuple[PayoutScenario, ...]
+    minimum_payout: float
+    maximum_payout: float
+    expected_payout: float
+    expected_profit: float
+    probability_of_payout: float
+    probability_of_profit: float
 
 
 @dataclass(frozen=True)

@@ -19,6 +19,48 @@ from jingcai.models import DixonColesModel, HalfFullModel
 from jingcai.models.poisson import field, match_timestamp
 
 
+MARKET_LABELS = {
+    "match_result": "胜平负",
+    "handicap_result": "让球胜平负",
+    "correct_score": "比分",
+    "total_goals": "总进球",
+    "half_full": "半全场",
+}
+
+OUTCOME_LABELS = {
+    "home": "主胜",
+    "draw": "平",
+    "away": "客胜",
+    "other_home": "胜其他",
+    "other_draw": "平其他",
+    "other_away": "负其他",
+    "home_home": "胜胜",
+    "home_draw": "胜平",
+    "home_away": "胜负",
+    "draw_home": "平胜",
+    "draw_draw": "平平",
+    "draw_away": "平负",
+    "away_home": "负胜",
+    "away_draw": "负平",
+    "away_away": "负负",
+}
+
+
+def chinese_market_label(market: str, handicap: int | None = None) -> str:
+    label = MARKET_LABELS.get(market, market)
+    if market == "handicap_result" and handicap is not None:
+        return f"{label}（{handicap:+d}）"
+    return label
+
+
+def chinese_outcome_label(market: str, outcome: str) -> str:
+    if market == "total_goals":
+        return f"{outcome}球"
+    if market == "correct_score" and ":" in outcome:
+        return outcome
+    return OUTCOME_LABELS.get(outcome, outcome)
+
+
 def matrix_mapping(matrix: list[list[float]]) -> dict[tuple[int, int], float]:
     return {(home, away): value for home, row in enumerate(matrix) for away, value in enumerate(row)}
 
@@ -175,9 +217,35 @@ def build_paper_candidates(
                 item = {
                     "match_id": str(fixture["match_id"]),
                     "label": f"{fixture['home_team']} vs {fixture['away_team']}",
+                    "competition": str(
+                        fixture.get("competition_name")
+                        or fixture.get("competition")
+                        or competition_code
+                    ),
+                    "competition_code": competition_code,
+                    "match_number": str(
+                        fixture.get("match_number")
+                        or fixture.get("official_number")
+                        or fixture["match_id"]
+                    ),
+                    "home_team": str(fixture["home_team"]),
+                    "away_team": str(fixture["away_team"]),
+                    "scheduled_start": str(
+                        fixture.get("scheduled_start")
+                        or fixture.get("kickoff")
+                        or fixture.get("match_time")
+                        or ""
+                    ),
                     "play": f"{market}:{outcome}",
                     "market": market,
                     "outcome": str(outcome),
+                    "market_label": chinese_market_label(
+                        market,
+                        int(fixture.get("handicap", 0))
+                        if market == "handicap_result"
+                        else None,
+                    ),
+                    "outcome_label": chinese_outcome_label(market, str(outcome)),
                     "probability": probability,
                     "market_probability": market_baseline[str(outcome)],
                     "decimal_odds": float(decimal_odds),

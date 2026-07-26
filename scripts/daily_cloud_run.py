@@ -14,6 +14,7 @@ from typing import Any, Callable
 from jingcai.__main__ import main as jingcai_main
 from jingcai.daily import parse_official_update
 from jingcai.notifications import NotificationSummary, send_configured
+from jingcai.projections import public_release_projection
 from jingcai.providers.sporttery import fetch_sporttery_payload, normalize_payload, save_snapshot
 
 
@@ -41,15 +42,39 @@ class FileDedupeStore:
         self.path.write_text(json.dumps(sorted(keys), ensure_ascii=False), encoding="utf-8")
 
 
-def format_summary(report: dict[str, Any]) -> str:
-    return "\n".join([
+def format_summary(report: dict[str, Any], panel_url: str | None = None) -> str:
+    lines = [
         f"**报告日期**：{report['report_date']}",
         f"**官方在售比赛**：{report['fixtures']} 场",
         f"**通过玩法级准入的模拟候选**：{report['candidates']} 个",
         f"**官方数据时间**：{report['source_as_of']}",
         f"**运行状态**：{report['model_state']}",
-        "仅用于概率研究；没有通过验收的玩法不会推荐，不保证中奖或盈利。",
-    ])
+    ]
+    details = report.get("candidate_details", [])
+    if details:
+        lines.append("\n**模拟建议**")
+        for item in details[:5]:
+            match_number = item.get("match_number") or item.get("match_id", "")
+            teams = (
+                f"{item.get('home_team', '')} vs {item.get('away_team', '')}"
+                if item.get("home_team") or item.get("away_team")
+                else item.get("label", "")
+            )
+            market = item.get("market_label") or item.get("market", "")
+            outcome = item.get("outcome_label") or item.get("outcome", "")
+            lines.append(
+                f"- **{match_number} {teams}**｜{market}：{outcome}｜"
+                f"奖金 {float(item.get('decimal_odds', 0)):.2f}｜"
+                f"模型 {float(item.get('probability', 0)):.1%}｜"
+                f"保守EV {float(item.get('conservative_ev', 0)):.1%}｜"
+                f"停售 {item.get('sale_cutoff', '未知')}"
+            )
+    else:
+        lines.append("\n**今日无符合标准的投注建议**，不会为了凑单强行推荐。")
+    if panel_url:
+        lines.append(f"\n[打开当日完整面板]({panel_url})")
+    lines.append("仅用于概率研究和模拟验证；没有通过验收的玩法不会推荐，不保证中奖或盈利。")
+    return "\n".join(lines)
 
 
 def _run_daily_live(arguments: list[str]) -> dict[str, Any]:
@@ -106,12 +131,47 @@ def run(
     if not html_path.exists():
         raise RuntimeError("daily-live did not create the HTML report")
 
-    report: dict[str, Any] = {
+    fixture_details = live_result.get("fixture_details", fixtures)
+    candidate_details = live_result.get("candidate_details", [])
+    if not isinstance(fixture_details, list):
+        fixture_details = fixtures
+    if not isinstance(candidate_details, list):
+        candidate_details = []
+    release_material = {
         "report_date": report_date,
-        "generated_at": datetime.now().astimezone().isoformat(),
+        "source_as_of": live_result.get("source_as_of", source_as_of.isoformat()),
+        "fixture_details": fixture_details,
+        "candidate_details": candidate_details,
+        "model_state": "PAPER_ONLY",
+    }
+    release_hash = hashlib.sha256(
+        json.dumps(release_material, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    release_id = f"{report_date}-{release_hash[:12]}"
+    generated_at = datetime.now().astimezone().isoformat()
+    public_projection = public_release_projection(
+        {
+            "release_id": release_id,
+            "release_hash": release_hash,
+            "report_date": report_date,
+            "generated_at": generated_at,
+            "source_as_of": release_material["source_as_of"],
+            "model_state": "PAPER_ONLY",
+        },
+        fixtures=fixture_details,
+        candidates=candidate_details,
+    )
+    report: dict[str, Any] = {
+        "schema_version": 1,
+        "release_id": release_id,
+        "release_hash": release_hash,
+        "report_date": report_date,
+        "generated_at": generated_at,
         "source_as_of": live_result.get("source_as_of", source_as_of.isoformat()),
         "fixtures": int(live_result.get("fixtures", len(fixtures))),
         "candidates": int(live_result.get("candidates", 0)),
+        "fixture_details": public_projection["fixtures"],
+        "candidate_details": public_projection["candidates"],
         "model_state": "PAPER_ONLY",
         "html": html_path.name,
         "raw_snapshot": raw_path.name,
@@ -120,18 +180,11 @@ def run(
     json_path = output_dir / f"report-{report_date}.json"
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # Hash the decision-bearing content, not generated timestamps or absolute paths,
-    # so a retry of the same report is idempotent across runners.
-    hash_material = {
-        key: report[key]
-        for key in ("report_date", "source_as_of", "fixtures", "candidates", "model_state")
-    }
-    content_hash = hashlib.sha256(
-        json.dumps(hash_material, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    ).hexdigest()
-    dedupe_key = f"daily-report:{report_date}:{content_hash}"
+    dedupe_key = f"daily-report:{release_id}"
+    base_url = os.environ.get("PUBLIC_REPORT_BASE_URL", "").rstrip("/")
+    panel_url = f"{base_url}/reports/{report_date}/{release_id}/" if base_url else None
     delivery = notifier(
-        f"竞彩研究日报 {report_date}", format_summary(report), require_configured=True,
+        f"竞彩研究日报 {report_date}", format_summary(report, panel_url), require_configured=True,
         dedupe_key=dedupe_key, dedupe_store=FileDedupeStore(output_dir / ".notification-dedupe.json"),
     )
     if not delivery.delivered and not delivery.duplicate:

@@ -1,14 +1,29 @@
 from __future__ import annotations
 
+from decimal import Decimal, ROUND_HALF_UP
 from math import prod
 from typing import Mapping
 
-from .domain import Market, MatchResult, Outcome, ResultStatus, Selection, SettlementStatus, Ticket, TicketSettlement
+from .domain import (
+    Market,
+    MatchResult,
+    Outcome,
+    ResultStatus,
+    Selection,
+    SettlementStatus,
+    Ticket,
+    TicketBundle,
+    TicketSettlement,
+)
 from .markets import OFFICIAL_CORRECT_SCORES
 
 
 def _side(home: int, away: int) -> str:
     return Outcome.HOME.value if home > away else Outcome.DRAW.value if home == away else Outcome.AWAY.value
+
+
+def round_payout(value: float) -> float:
+    return float(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def settle_selection(selection: Selection, result: MatchResult) -> SettlementStatus:
@@ -52,6 +67,23 @@ def settle_ticket(ticket: Ticket, results: Mapping[str, MatchResult]) -> TicketS
     active_odds = [s.decimal_odds for s, state in zip(ticket.selections, states) if state is SettlementStatus.WON]
     if not active_odds:
         return TicketSettlement(ticket.ticket_id, SettlementStatus.VOID, ticket.stake, 0.0)
-    payout = ticket.stake * prod(active_odds)
+    payout = round_payout(ticket.stake * prod(active_odds))
     status = SettlementStatus.WON
     return TicketSettlement(ticket.ticket_id, status, payout, payout - ticket.stake)
+
+
+def settle_bundle(
+    bundle: TicketBundle, results: Mapping[str, MatchResult]
+) -> TicketSettlement:
+    settlements = [settle_ticket(ticket, results) for ticket in bundle.tickets]
+    if any(row.status is SettlementStatus.PENDING for row in settlements):
+        return TicketSettlement(bundle.bundle_id, SettlementStatus.PENDING, 0.0, 0.0)
+    payout = round_payout(sum(row.payout for row in settlements))
+    profit = round_payout(payout - bundle.stake)
+    if all(row.status is SettlementStatus.VOID for row in settlements):
+        status = SettlementStatus.VOID
+    elif profit > 0:
+        status = SettlementStatus.WON
+    else:
+        status = SettlementStatus.LOST
+    return TicketSettlement(bundle.bundle_id, status, payout, profit)
