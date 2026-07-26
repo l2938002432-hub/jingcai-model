@@ -264,9 +264,26 @@ def main(argv: list[str] | None = None) -> int:
             aliases = json.loads(Path(args.aliases_json).read_text(encoding="utf-8"))
             history, fixtures = canonicalize_teams(history, fixtures, aliases)
             acceptance = json.loads(Path(args.acceptance_json).read_text(encoding="utf-8"))
-            fixtures = [
-                fixture for fixture in fixtures
-                if acceptance.get(str(fixture.get("competition_code")), {}).get("approved") is True
+            all_fixtures = []
+            for fixture in fixtures:
+                competition_acceptance = acceptance.get(
+                    str(fixture.get("competition_code")), {}
+                )
+                approved_markets = [
+                    market
+                    for market, approved in competition_acceptance.get("markets", {}).items()
+                    if approved is True
+                ]
+                all_fixtures.append({
+                    **fixture,
+                    "model_approved": competition_acceptance.get("approved") is True,
+                    "approved_markets": approved_markets,
+                    "recommendation_eligible": (
+                        competition_acceptance.get("approved") is True
+                    ),
+                })
+            model_fixtures = [
+                fixture for fixture in all_fixtures if fixture["model_approved"]
             ]
             if bool(args.club_elo_csv) != bool(args.uefa_history_dir):
                 raise DailyLiveError("UCL requires both --club-elo-csv and --uefa-history-dir")
@@ -276,27 +293,38 @@ def main(argv: list[str] | None = None) -> int:
                     args.club_elo_csv, args.uefa_history_dir, TeamAliases(aliases)
                 )
             else:
-                fixtures = [row for row in fixtures if str(row.get("competition_code")) != "UCL"]
+                for fixture in all_fixtures:
+                    if str(fixture.get("competition_code")) == "UCL":
+                        fixture["recommendation_eligible"] = False
+                model_fixtures = [
+                    row for row in model_fixtures
+                    if str(row.get("competition_code")) != "UCL"
+                ]
             validate_freshness(
                 source_as_of, now=now, max_age=timedelta(minutes=args.max_age_minutes)
             )
-            if not fixtures:
-                raise DailyLiveError("no approved fixtures have complete production inputs")
-            candidates = build_paper_candidates(
-                history, fixtures, prediction_time=now, safety_margin=args.safety_margin,
-                acceptance_config=acceptance, fixture_predictor=fixture_predictor,
+            if not all_fixtures:
+                raise DailyLiveError("official feed has no on-sale fixtures")
+            candidates = (
+                build_paper_candidates(
+                    history, model_fixtures, prediction_time=now,
+                    safety_margin=args.safety_margin,
+                    acceptance_config=acceptance, fixture_predictor=fixture_predictor,
+                )
+                if model_fixtures
+                else []
             )
         except DailyLiveError as exc:
             raise SystemExit(f"daily-live 安全拒绝: {exc}") from exc
         report = render_daily_report(
             generated_at=now, model_state="PAPER_ONLY", candidates=candidates,
-            data_fresh=True, source_as_of=source_as_of, fixtures=fixtures,
+            data_fresh=True, source_as_of=source_as_of, fixtures=all_fixtures,
         )
         output = write_report(args.output, report)
         print(json.dumps({
-            "output": str(output.resolve()), "fixtures": len(fixtures),
+            "output": str(output.resolve()), "fixtures": len(all_fixtures),
             "candidates": len(candidates), "source_as_of": source_as_of.isoformat(),
-            "fixture_details": fixtures,
+            "fixture_details": all_fixtures,
             "candidate_details": candidates,
             "cutoff_notice": "sale_cutoff_estimated=true 表示停售时间为开赛前10分钟估算值",
         }, ensure_ascii=False))

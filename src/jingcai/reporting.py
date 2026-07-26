@@ -152,6 +152,8 @@ def render_daily_report(
         competition = str(fixture.get("competition", ""))
         kickoff = str(fixture.get("scheduled_start") or fixture.get("kickoff") or "未提供")
         cutoff = str(fixture.get("sale_cutoff", "未提供"))
+        approved_markets = set(fixture.get("approved_markets", ()))
+        recommendation_eligible = fixture.get("recommendation_eligible", False) is True
         market_blocks: list[str] = []
         odds_by_market = fixture.get("odds", {})
         if isinstance(odds_by_market, Mapping):
@@ -171,7 +173,9 @@ def render_daily_report(
                         f"<span><b>{html.escape(outcome_text)}</b> {float(odd):.2f}</span>"
                     )
                 market_blocks.append(
-                    f"<div class='market-row'><strong>{html.escape(market_name)}</strong>"
+                    f"<div class='market-row'><strong>{html.escape(market_name)} "
+                    f"<em class='market-status {'approved' if market in approved_markets and recommendation_eligible else 'display-only'}'>"
+                    f"{'模型已验收' if market in approved_markets and recommendation_eligible else ('输入不足' if market in approved_markets else '仅展示')}</em></strong>"
                     f"<div>{''.join(options)}</div></div>"
                 )
         fixture_cards.append(
@@ -200,7 +204,7 @@ dl{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:12px 0}}dl d
 .budget-grid{{display:grid;grid-template-columns:minmax(220px,320px) 1fr;gap:18px}}label{{font-weight:700}}input{{display:block;width:100%;min-height:44px;margin-top:7px;border:1px solid #98a2b3;border-radius:9px;padding:9px 11px;font:inherit}}input:focus{{outline:3px solid #b9d2ff;border-color:var(--brand)}}
 .error{{min-height:1.5em;color:var(--danger);font-size:.88rem}}.results{{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}}.result{{background:#f8faff;border-radius:10px;padding:10px}}.result strong{{display:block;font-size:1.08rem}}.allocation{{margin-top:12px;padding:0;list-style:none}}.allocation li{{padding:8px 0;border-bottom:1px solid var(--line)}}
 .empty{{text-align:center;padding:30px 12px;color:var(--muted)}}footer{{padding:8px 2px 28px;color:var(--muted);font-size:.84rem}}
-.fixture-list{{display:grid;gap:12px}}.fixture-card{{border:1px solid var(--line);border-radius:12px;padding:14px}}.fixture-head{{display:flex;justify-content:space-between;gap:16px}}.fixture-head h3 span{{color:var(--muted);font-weight:400}}.fixture-time{{text-align:right;color:var(--muted);font-size:.82rem}}.market-list{{display:grid;gap:7px;margin-top:10px}}.market-row{{display:grid;grid-template-columns:130px 1fr;gap:10px;padding:8px;background:#f8faff;border-radius:8px}}.market-row div{{display:flex;flex-wrap:wrap;gap:6px 14px}}.market-row span{{white-space:nowrap}}
+.fixture-list{{display:grid;gap:12px}}.fixture-card{{border:1px solid var(--line);border-radius:12px;padding:14px}}.fixture-head{{display:flex;justify-content:space-between;gap:16px}}.fixture-head h3 span{{color:var(--muted);font-weight:400}}.fixture-time{{text-align:right;color:var(--muted);font-size:.82rem}}.market-list{{display:grid;gap:7px;margin-top:10px}}.market-row{{display:grid;grid-template-columns:170px 1fr;gap:10px;padding:8px;background:#f8faff;border-radius:8px}}.market-row div{{display:flex;flex-wrap:wrap;gap:6px 14px}}.market-row span{{white-space:nowrap}}.market-status{{display:inline-block;margin-left:4px;border-radius:99px;padding:1px 6px;font-size:.68rem;font-style:normal;font-weight:700}}.market-status.approved{{background:#dcfae6;color:#087443}}.market-status.display-only{{background:#eef2f6;color:#667085}}
 @media(max-width:760px){{.shell{{padding:14px}}header{{display:block}}.dashboard{{grid-template-columns:1fr 1fr}}.dashboard .status{{grid-column:1/-1}}.table-wrap{{display:none}}.cards{{display:grid;gap:12px}}.match-card{{border:1px solid var(--line);border-radius:12px;padding:14px}}.budget-grid{{grid-template-columns:1fr}}.results{{grid-template-columns:1fr 1fr}}}}
 @media(max-width:760px){{.fixture-head{{display:block}}.fixture-time{{text-align:left;margin-top:6px}}.market-row{{grid-template-columns:1fr}}}}
 @media(max-width:360px){{.dashboard,.results{{grid-template-columns:1fr}}.dashboard .status{{grid-column:auto}}}}

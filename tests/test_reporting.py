@@ -14,6 +14,8 @@ class ReportingTests(unittest.TestCase):
             "display_home_team": "弗拉门戈", "display_away_team": "圣保罗",
             "kickoff": "2026-07-27T05:30:00+08:00",
             "sale_cutoff": "2026-07-27T05:20:00+08:00", "handicap": -1,
+            "model_approved": True, "approved_markets": ["match_result"],
+            "recommendation_eligible": True,
             "odds": {
                 "match_result": {"home": 1.7, "draw": 3.5, "away": 4.2},
                 "handicap_result": {"home": 2.9, "draw": 3.4, "away": 2.0},
@@ -28,6 +30,8 @@ class ReportingTests(unittest.TestCase):
         )
         for text in ("周日001", "弗拉门戈", "圣保罗", "胜平负", "让球胜平负（-1）", "比分", "总进球", "半全场"):
             self.assertIn(text, report)
+        self.assertIn("模型已验收", report)
+        self.assertIn("仅展示", report)
 
     def test_paper_only_never_labels_candidate_as_live(self) -> None:
         report = render_daily_report(

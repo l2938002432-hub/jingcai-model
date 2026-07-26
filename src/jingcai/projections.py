@@ -20,6 +20,9 @@ FIXTURE_FIELDS = (
     "odds_as_of",
     "handicap",
     "odds",
+    "model_approved",
+    "approved_markets",
+    "recommendation_eligible",
 )
 
 CANDIDATE_FIELDS = (
