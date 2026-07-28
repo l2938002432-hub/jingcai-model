@@ -366,6 +366,14 @@ def normalize_uniform_results(
             "home_score": final[0] if final else None, "away_score": final[1] if final else None,
             "half_home_score": half[0] if half else None, "half_away_score": half[1] if half else None,
         }
+        match_date, match_time = item.get("matchDate"), item.get("matchTime")
+        if match_date is not None and match_time is not None:
+            try:
+                record["kickoff"] = datetime.fromisoformat(
+                    f"{match_date}T{match_time}+08:00"
+                ).astimezone(UTC).isoformat()
+            except ValueError as exc:
+                raise SportteryError("official result row has invalid kickoff") from exc
         revision_material = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         record["revision"] = hashlib.sha256(revision_material.encode("utf-8")).hexdigest()
         result.append(record)
