@@ -1,10 +1,12 @@
 import unittest
+from datetime import UTC, datetime
 from subprocess import CalledProcessError
 from unittest.mock import MagicMock, patch
 
 from jingcai.providers.sporttery import (
     SportteryError,
     fetch_sporttery_payload,
+    normalize_fixed_bonus_history,
     normalize_payload,
     validate_payload,
 )
@@ -94,6 +96,33 @@ class SportteryProviderTests(unittest.TestCase):
     def test_rejects_non_positive_timeout(self) -> None:
         with self.assertRaises(ValueError):
             fetch_sporttery_payload(timeout=0)
+
+    def test_normalizes_each_historic_market_with_its_own_timestamp(self) -> None:
+        payload = {"success": True, "value": {
+            "had": [{"updateDate": "2026-07-20", "updateTime": "10:00:00", "h": "2.1", "d": "3.2", "a": "3.4"}],
+            "hhad": [{"updateDate": "2026-07-20", "updateTime": "10:01:00", "goalLineValue": "-1", "h": "3.1", "d": "3.3", "a": "2.0"}],
+            "ttg": [{"updateDate": "2026-07-20", "updateTime": "10:02:00", "s0": "9.0", "s7": "8.0"}],
+            "crs": [{"updateDate": "2026-07-20", "updateTime": "10:03:00", "s00s00": "7.0", "s1sh": "10.0"}],
+            "hafu": [{"updateDate": "2026-07-20", "updateTime": "10:04:00", "hh": "3.0", "aa": "4.0"}],
+        }}
+        rows = normalize_fixed_bonus_history(
+            payload, match_id=42, ingested_at=datetime(2026, 7, 28, tzinfo=UTC)
+        )
+        self.assertEqual(5, len(rows))
+        self.assertEqual({"match_result", "handicap_result", "total_goals", "correct_score", "half_full"}, {row["market"] for row in rows})
+        handicap = next(row for row in rows if row["market"] == "handicap_result")
+        self.assertEqual("-1", handicap["handicap"])
+        self.assertEqual("2026-07-20T02:01:00+00:00", handicap["published_at"])
+        self.assertEqual("2026-07-28T00:00:00+00:00", handicap["ingested_at"])
+
+    def test_historic_bonus_refuses_missing_time_or_invalid_odds(self) -> None:
+        no_time = {"success": True, "value": {"had": [{"h": "2.0"}]}}
+        bad_odds = {"success": True, "value": {"had": [{
+            "updateDate": "2026-07-20", "updateTime": "10:00:00", "h": "1.0"
+        }]}}
+        for payload in (no_time, bad_odds):
+            with self.subTest(payload=payload), self.assertRaises(SportteryError):
+                normalize_fixed_bonus_history(payload, match_id=1, ingested_at=datetime.now(UTC))
 
 
 if __name__ == "__main__":

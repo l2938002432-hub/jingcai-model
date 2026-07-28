@@ -1,0 +1,20 @@
+version: '1.0'
+name: sporttery-connectivity-probe
+displayName: 体彩接口连通性探针
+triggers:
+  trigger: auto
+  push:
+    branches:
+      include: [master]
+stages:
+  - name: probe
+    displayName: 连通性探针
+    strategy: naturally
+    trigger: auto
+    steps:
+      - step: build@python
+        name: run_probe
+        displayName: 仅验证接口连通性
+        pythonVersion: '3.9'
+        commands:
+          - PYTHONPATH=src python3 scripts/probe_sporttery_connectivity.py
