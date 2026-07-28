@@ -27,13 +27,14 @@ def audit_history_coverage(
     *,
     decision_offset_minutes: int = 105,
     max_snapshot_age_minutes: int = 30,
+    minimum_coverage_percent: float = 95.0,
 ) -> dict[str, object]:
     """Measure decision-time coverage and quarantine unsafe historical points.
 
     The function does not compute ROI and cannot turn an incomplete series into
     a trusted data set. A result needs a timezone-aware ``kickoff`` field.
     """
-    if decision_offset_minutes <= 0 or max_snapshot_age_minutes < 0:
+    if decision_offset_minutes <= 0 or max_snapshot_age_minutes < 0 or not 0 <= minimum_coverage_percent <= 100:
         raise ValueError("invalid decision policy")
     matches: dict[str, datetime] = {}
     quarantined: list[dict[str, str]] = []
@@ -85,5 +86,8 @@ def audit_history_coverage(
         "max_snapshot_age_minutes": max_snapshot_age_minutes,
         "result_matches": len(matches), "coverage": coverage,
         "missing_at_decision": missing, "quarantined": quarantined,
-        "safe_for_economic_backtest": not quarantined and bool(matches),
+        "safe_for_economic_backtest": (
+            not quarantined and bool(matches)
+            and all(stats["coverage_percent"] >= minimum_coverage_percent for stats in coverage.values())
+        ),
     }

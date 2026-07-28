@@ -10,6 +10,8 @@ from jingcai.providers.sporttery import (
     normalize_injury_suspension,
     normalize_payload,
     normalize_uniform_results,
+    official_kickoffs_from_match_page,
+    attach_official_kickoffs,
     validate_payload,
 )
 
@@ -140,6 +142,16 @@ class SportteryProviderTests(unittest.TestCase):
         self.assertEqual("empty", empty["availability"])
         unavailable = normalize_injury_suspension({"success": False}, match_id=1, observed_at=datetime.now(UTC))
         self.assertEqual("unknown", unavailable["availability"])
+
+    def test_attaches_only_exact_official_match_page_kickoffs(self) -> None:
+        page = {"success": True, "value": {"matchInfoList": [{"subMatchList": [{
+            "matchId": 7, "matchDate": "2026-07-28", "matchTime": "20:00"
+        }]}]}}
+        kickoffs = official_kickoffs_from_match_page(page)
+        self.assertEqual("2026-07-28T12:00:00+00:00", kickoffs["7"])
+        rows = attach_official_kickoffs([{"match_id": "7"}, {"match_id": "unknown"}], kickoffs)
+        self.assertEqual("sporttery-result-page", rows[0]["kickoff_source"])
+        self.assertNotIn("kickoff", rows[1])
 
 
 if __name__ == "__main__":

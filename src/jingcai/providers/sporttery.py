@@ -26,6 +26,9 @@ INJURY_URL = (
     "https://webapi.sporttery.cn/gateway/uniform/football/"
     "getInjurySuspensionV1.qry"
 )
+MATCH_PAGE_URL = (
+    "https://webapi.sporttery.cn/gateway/uniform/fb/getMatchDataPageListV1.qry"
+)
 HEADERS = {
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "zh-CN,zh;q=0.9",
@@ -156,6 +159,16 @@ def fetch_injury_suspension(match_id: str | int, *, timeout: float = 20.0) -> di
         _fetch_json(f"{INJURY_URL}?sportteryMatchId={match_id}", timeout=timeout),
         endpoint="injury-suspension",
     )
+
+
+def fetch_result_match_page(
+    *, page_no: int = 1, page_size: int = 80, timeout: float = 20.0
+) -> dict[str, Any]:
+    """Read the recent official result page that includes match kickoff time."""
+    if page_no < 1 or not 1 <= page_size <= 80:
+        raise ValueError("page_no must be positive and page_size must be 1..80")
+    url = f"{MATCH_PAGE_URL}?method=result&pageSize={page_size}&pageNo={page_no}"
+    return _require_success(_fetch_json(url, timeout=timeout), endpoint="result-page")
 
 
 def save_snapshot(payload: Mapping[str, Any], path: str | Path) -> Path:
@@ -407,3 +420,48 @@ def normalize_injury_suspension(
         "availability": "available" if lists else "empty", "players": [dict(row) for row in lists],
         "source": "sporttery-injury-suspension",
     }
+
+
+def official_kickoffs_from_match_page(payload: Mapping[str, Any]) -> dict[str, str]:
+    """Extract only unambiguous official kickoff times keyed by ``matchId``."""
+    if payload.get("success") is not True:
+        raise SportteryError("official result-page payload did not report success")
+    value = payload.get("value")
+    groups = value.get("matchInfoList") if isinstance(value, Mapping) else None
+    if not isinstance(groups, list):
+        raise SportteryError("official result-page payload has no match groups")
+    result: dict[str, str] = {}
+    for group in groups:
+        if not isinstance(group, Mapping) or not isinstance(group.get("subMatchList"), list):
+            raise SportteryError("official result-page has malformed match group")
+        for item in group["subMatchList"]:
+            if not isinstance(item, Mapping) or item.get("matchId") is None:
+                raise SportteryError("official result-page has malformed match")
+            date, clock = item.get("matchDate"), item.get("matchTime")
+            if date is None or clock is None:
+                continue
+            try:
+                kickoff = datetime.fromisoformat(f"{date}T{clock}+08:00").astimezone(UTC).isoformat()
+            except ValueError as exc:
+                raise SportteryError("official result-page has invalid kickoff") from exc
+            match_id = str(item["matchId"])
+            previous = result.get(match_id)
+            if previous is not None and previous != kickoff:
+                raise SportteryError("official result-page has conflicting kickoff")
+            result[match_id] = kickoff
+    return result
+
+
+def attach_official_kickoffs(
+    results: list[Mapping[str, Any]], kickoff_by_match_id: Mapping[str, str]
+) -> list[dict[str, Any]]:
+    """Attach only exact matchId matches; unmatched records remain without time."""
+    enriched = []
+    for row in results:
+        copied = dict(row)
+        kickoff = kickoff_by_match_id.get(str(row.get("match_id", "")))
+        if kickoff:
+            copied["kickoff"] = kickoff
+            copied["kickoff_source"] = "sporttery-result-page"
+        enriched.append(copied)
+    return enriched
