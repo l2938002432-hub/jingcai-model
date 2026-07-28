@@ -15,6 +15,7 @@ from jingcai.__main__ import main as jingcai_main
 from jingcai.daily import parse_official_update
 from jingcai.ledger import Ledger, LedgerKind, ReleaseManifest, freeze_release
 from jingcai.notifications import NotificationSummary, send_configured
+from jingcai.notification_window import select_notification_candidates
 from jingcai.projections import public_release_projection
 from jingcai.providers.sporttery import fetch_sporttery_payload, normalize_payload, save_snapshot
 
@@ -198,12 +199,16 @@ def run(
         "raw_snapshot": raw_path.name,
         "normalized_snapshot": fixtures_path.name,
     }
+    notification_candidates = select_notification_candidates(candidate_details, observed_at=source_as_of)
+    report["notification_candidates"] = len(notification_candidates)
     json_path = output_dir / f"report-{report_date}.json"
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     dedupe_key = f"daily-report:{release_id}"
     base_url = os.environ.get("PUBLIC_REPORT_BASE_URL", "").rstrip("/")
     panel_url = f"{base_url}/reports/{report_date}/{release_id}/" if base_url else None
+    if not notification_candidates:
+        notifier = lambda *args, **kwargs: NotificationSummary((), duplicate=True, dedupe_key=dedupe_key)
     delivery = notifier(
         f"竞彩研究日报 {report_date}", format_summary(report, panel_url), require_configured=True,
         dedupe_key=dedupe_key, dedupe_store=FileDedupeStore(output_dir / ".notification-dedupe.json"),

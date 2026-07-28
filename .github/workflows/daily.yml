@@ -1,7 +1,7 @@
 name: Daily Sporttery Feed
 on:
   schedule:
-    - cron: "25 2 * * *" # 10:25 Asia/Shanghai
+    - cron: "20 * * * *" # hourly; sends only fresh candidates at T-120 to T-60
   workflow_dispatch:
     inputs:
       snapshot_gzip_base64:

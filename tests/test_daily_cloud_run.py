@@ -27,6 +27,7 @@ class DailyCloudRunTests(unittest.TestCase):
                 "market": "match_result", "market_label": "胜平负",
                 "outcome": "home", "outcome_label": "主胜",
                 "decimal_odds": 2.1, "probability": 0.55, "conservative_ev": 0.08,
+                "odds_as_of": "2026-07-23T02:20:00+00:00",
                 "sale_cutoff": "2026-07-23T12:00:00+08:00",
             }],
         }
@@ -48,12 +49,31 @@ class DailyCloudRunTests(unittest.TestCase):
             self.assertTrue((Path(directory) / "model-ledger.jsonl").exists())
             report = json.loads(report_json.read_text(encoding="utf-8"))
             self.assertEqual((report["fixtures"], report["candidates"]), (6, 1))
+            self.assertEqual(1, report["notification_candidates"])
             self.assertEqual("胜平负", report["candidate_details"][0]["market_label"])
             self.assertRegex(report["release_id"], r"^2026-07-23-[0-9a-f]{12}$")
             self.assertTrue(captured["require_configured"])
             self.assertEqual(f"daily-report:{report['release_id']}", captured["dedupe_key"])
             self.assertIn("周四001 主队 vs 客队", captured["text"])
             self.assertTrue(result.delivered)
+
+    def test_does_not_push_outside_the_decision_window(self) -> None:
+        notified = False
+
+        def runner(arguments: list[str]) -> dict:
+            result = self._runner(arguments)
+            result["candidate_details"][0]["sale_cutoff"] = "2026-07-23T18:00:00+08:00"
+            return result
+
+        def notify(*args, **kwargs):
+            nonlocal notified
+            notified = True
+            return NotificationSummary(("feishu",), (NotificationResult("feishu", 200),))
+
+        with tempfile.TemporaryDirectory() as directory:
+            _, report_json, _, result = run(Path(directory), fetcher=lambda: PAYLOAD, live_runner=runner, notifier=notify)
+            self.assertEqual((False, True), (notified, result.duplicate))
+            self.assertEqual(0, json.loads(report_json.read_text(encoding="utf-8"))["notification_candidates"])
 
     def test_all_notification_channels_failed_fails_the_task(self) -> None:
         def notify(*args, **kwargs):
