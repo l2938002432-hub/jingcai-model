@@ -42,10 +42,12 @@ class RelayOfficialSnapshotTests(unittest.TestCase):
         self.assertEqual("https://example.invalid/run", result)
         command = runner.call_args.args[0]
         self.assertNotIn("encoded", command)
-        self.assertIn("--json", command)
+        self.assertEqual("api", command[1])
+        self.assertIn("--input", command)
         body = json.loads(runner.call_args.kwargs["input"])
-        self.assertEqual("encoded", body["snapshot_gzip_base64"])
-        self.assertEqual("a" * 64, body["snapshot_sha256"])
+        self.assertEqual("encoded", body["inputs"]["snapshot_gzip_base64"])
+        self.assertEqual("a" * 64, body["inputs"]["snapshot_sha256"])
+        self.assertEqual("main", body["ref"])
         self.assertTrue(runner.call_args.kwargs["check"])
 
 

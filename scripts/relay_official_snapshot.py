@@ -39,20 +39,21 @@ def dispatch(
     )
     encoded, digest = encode_snapshot(payload)
     workflow_inputs = json.dumps(
-        {"snapshot_gzip_base64": encoded, "snapshot_sha256": digest},
+        {
+            "ref": branch,
+            "inputs": {"snapshot_gzip_base64": encoded, "snapshot_sha256": digest},
+        },
         separators=(",", ":"),
     )
     completed = runner(
         [
             _github_cli(),
-            "workflow",
-            "run",
-            "daily.yml",
-            "--repo",
-            repository,
-            "--ref",
-            branch,
-            "--json",
+            "api",
+            "--method",
+            "POST",
+            f"repos/{repository}/actions/workflows/daily.yml/dispatches",
+            "--input",
+            "-",
         ],
         input=workflow_inputs,
         text=True,
@@ -60,7 +61,7 @@ def dispatch(
         check=True,
         cwd=PROJECT_ROOT,
     )
-    return str(getattr(completed, "stdout", "")).strip()
+    return str(getattr(completed, "stdout", "")).strip() or "cloud workflow dispatched"
 
 
 def main() -> int:
