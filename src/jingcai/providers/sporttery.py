@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import hashlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Mapping
@@ -307,3 +308,88 @@ def normalize_fixed_bonus_history(
         raise SportteryError("official fixed-bonus payload has no recognized market history")
     rows.sort(key=lambda row: (str(row["market"]), str(row["published_at"])))
     return rows
+
+
+def _result_items(payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    value = payload.get("value")
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, Mapping)]
+    if isinstance(value, Mapping):
+        for key in ("list", "matchList", "matchInfoList", "data", "items"):
+            candidate = value.get(key)
+            if isinstance(candidate, list):
+                return [item for item in candidate if isinstance(item, Mapping)]
+    raise SportteryError("official result payload has no match list")
+
+
+def _score(value: object) -> tuple[int, int] | None:
+    if value is None or not str(value).strip():
+        return None
+    text = str(value).strip().replace("-", ":")
+    parts = text.split(":")
+    if len(parts) != 2:
+        raise SportteryError("official result score has invalid format")
+    try:
+        home, away = (int(part.strip()) for part in parts)
+    except ValueError as exc:
+        raise SportteryError("official result score is not numeric") from exc
+    if home < 0 or away < 0:
+        raise SportteryError("official result score is negative")
+    return home, away
+
+
+def normalize_uniform_results(
+    payload: Mapping[str, Any], *, ingested_at: datetime
+) -> list[dict[str, Any]]:
+    """Produce the existing settlement revision contract from official results.
+
+    Official result publication time is not guaranteed in this endpoint, so the
+    observation time is explicitly labelled ``source_as_of`` for settlement
+    only. It must never be used as a historical pre-match feature.
+    """
+    if payload.get("success") is not True:
+        raise SportteryError("official result payload did not report success")
+    if ingested_at.tzinfo is None:
+        raise ValueError("ingested_at must be timezone-aware")
+    result: list[dict[str, Any]] = []
+    for item in _result_items(payload):
+        match_id = item.get("matchId")
+        if match_id is None:
+            raise SportteryError("official result row has no matchId")
+        final = _score(item.get("sectionsNo999") or item.get("finalScore") or item.get("score"))
+        half = _score(item.get("sectionsNo1") or item.get("halfScore"))
+        status_text = str(item.get("matchStatus") or item.get("status") or "").casefold()
+        status = "finished" if final is not None else "void" if any(word in status_text for word in ("cancel", "void", "延期", "取消")) else "pending"
+        record: dict[str, Any] = {
+            "match_id": str(match_id), "source": "sporttery-uniform-result",
+            "source_as_of": ingested_at.astimezone(UTC).isoformat(), "status": status,
+            "home_score": final[0] if final else None, "away_score": final[1] if final else None,
+            "half_home_score": half[0] if half else None, "half_away_score": half[1] if half else None,
+        }
+        revision_material = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        record["revision"] = hashlib.sha256(revision_material.encode("utf-8")).hexdigest()
+        result.append(record)
+    return result
+
+
+def normalize_injury_suspension(
+    payload: Mapping[str, Any], *, match_id: str | int, observed_at: datetime
+) -> dict[str, Any]:
+    """Normalize injury snapshots while distinguishing empty from unavailable."""
+    if observed_at.tzinfo is None:
+        raise ValueError("observed_at must be timezone-aware")
+    if payload.get("success") is not True:
+        return {"match_id": str(match_id), "observed_at": observed_at.isoformat(), "availability": "unknown", "players": []}
+    value = payload.get("value")
+    if not isinstance(value, Mapping):
+        return {"match_id": str(match_id), "observed_at": observed_at.isoformat(), "availability": "unknown", "players": []}
+    lists = []
+    for key in ("homeList", "awayList", "homeInjurySuspensionList", "awayInjurySuspensionList"):
+        item = value.get(key)
+        if isinstance(item, list):
+            lists.extend(row for row in item if isinstance(row, Mapping))
+    return {
+        "match_id": str(match_id), "observed_at": observed_at.astimezone(UTC).isoformat(),
+        "availability": "available" if lists else "empty", "players": [dict(row) for row in lists],
+        "source": "sporttery-injury-suspension",
+    }

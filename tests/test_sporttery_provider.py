@@ -7,7 +7,9 @@ from jingcai.providers.sporttery import (
     SportteryError,
     fetch_sporttery_payload,
     normalize_fixed_bonus_history,
+    normalize_injury_suspension,
     normalize_payload,
+    normalize_uniform_results,
     validate_payload,
 )
 
@@ -123,6 +125,21 @@ class SportteryProviderTests(unittest.TestCase):
         for payload in (no_time, bad_odds):
             with self.subTest(payload=payload), self.assertRaises(SportteryError):
                 normalize_fixed_bonus_history(payload, match_id=1, ingested_at=datetime.now(UTC))
+
+    def test_normalizes_official_regulation_and_half_time_scores_for_settlement(self) -> None:
+        payload = {"success": True, "value": {"matchList": [{
+            "matchId": 99, "sectionsNo999": "2:1", "sectionsNo1": "1:0", "matchStatus": "Finished"
+        }]}}
+        row = normalize_uniform_results(payload, ingested_at=datetime(2026, 7, 28, tzinfo=UTC))[0]
+        self.assertEqual((2, 1, 1, 0), (row["home_score"], row["away_score"], row["half_home_score"], row["half_away_score"]))
+        self.assertEqual("finished", row["status"])
+        self.assertEqual(64, len(row["revision"]))
+
+    def test_injury_empty_is_not_claimed_as_no_injuries_and_failure_is_unknown(self) -> None:
+        empty = normalize_injury_suspension({"success": True, "value": {"homeList": [], "awayList": []}}, match_id=1, observed_at=datetime.now(UTC))
+        self.assertEqual("empty", empty["availability"])
+        unavailable = normalize_injury_suspension({"success": False}, match_id=1, observed_at=datetime.now(UTC))
+        self.assertEqual("unknown", unavailable["availability"])
 
 
 if __name__ == "__main__":
