@@ -18,4 +18,5 @@ reports/
 .npm-cache/
 data/snapshots/
 data/official-history/
+data/prospective-snapshots/
 data/private/
