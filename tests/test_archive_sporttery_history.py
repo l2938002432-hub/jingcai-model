@@ -39,3 +39,15 @@ class ArchiveSportteryHistoryTests(unittest.TestCase):
             with patch("sys.argv", ["enrich", "--input", str(root / "results.json"), "--output", str(output), "--offline-page", str(root / "page.json")]):
                 self.assertEqual(0, enrich_main())
             self.assertIn("kickoff", output.read_text(encoding="utf-8"))
+
+    def test_audit_can_read_frozen_protocol(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "normalized-results.json").write_text('[{"match_id":"1","kickoff":"2026-07-28T12:00:00+00:00"}]', encoding="utf-8")
+            (root / "normalized-bonus-points.json").write_text('[]', encoding="utf-8")
+            protocol = root / "protocol.json"
+            protocol.write_text('{"decision_windows":{"first":{"target_minutes_before_kickoff":105,"max_snapshot_age_minutes":30}},"minimum_coverage_percent":95}', encoding="utf-8")
+            output = root / "coverage.json"
+            with patch("sys.argv", ["audit", "--input-dir", str(root), "--output", str(output), "--protocol", str(protocol)]):
+                self.assertEqual(0, audit_main())
+            self.assertIn('"decision_offset_minutes": 105', output.read_text(encoding="utf-8"))

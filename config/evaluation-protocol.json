@@ -1,0 +1,30 @@
+{
+  "version": "2026-07-28.1",
+  "purpose": "Historical economic validation only; no automatic betting",
+  "decision_windows": {
+    "first": {
+      "target_minutes_before_kickoff": 105,
+      "allowed_from_minutes_before_kickoff": 120,
+      "allowed_to_minutes_before_kickoff": 90,
+      "max_snapshot_age_minutes": 30
+    },
+    "review": {
+      "target_minutes_before_kickoff": 50,
+      "allowed_from_minutes_before_kickoff": 60,
+      "allowed_to_minutes_before_kickoff": 35,
+      "max_snapshot_age_minutes": 30
+    }
+  },
+  "minimum_coverage_percent": 95.0,
+  "market_order": [
+    "match_result",
+    "handicap_result",
+    "total_goals",
+    "correct_score",
+    "half_full"
+  ],
+  "economic_stress": {
+    "odds_degradation_percent": [3, 5],
+    "maximum_drawdown_percent": 10
+  }
+}
