@@ -240,7 +240,7 @@ _HISTORY_MARKETS = {
 }
 _HISTORY_METADATA = {
     "updateDate", "updateTime", "bonusDate", "bonusTime", "date", "time",
-    "goalLineValue", "goalLine", "matchId", "poolCode",
+    "goalLineValue", "goalLine", "matchId", "poolCode", "hf", "df", "af",
 }
 
 
@@ -278,6 +278,9 @@ def normalize_fixed_bonus_history(
     value = payload.get("value")
     if not isinstance(value, Mapping):
         raise SportteryError("official fixed-bonus payload has no value mapping")
+    history = value.get("oddsHistory")
+    if isinstance(history, Mapping):
+        value = history
     rows: list[dict[str, Any]] = []
     for code, market in _HISTORY_MARKETS.items():
         series: object = value.get(code)
@@ -301,8 +304,8 @@ def normalize_fixed_bonus_history(
                 "ingested_at": ingested_at.astimezone(UTC).isoformat(),
                 "odds": odds, "source": "sporttery-uniform-fixed-bonus",
             }
-            if code == "hhad" and item.get("goalLineValue") is not None:
-                record["handicap"] = str(item["goalLineValue"])
+            if code == "hhad" and (item.get("goalLineValue") is not None or item.get("goalLine") is not None):
+                record["handicap"] = str(item.get("goalLineValue") or item.get("goalLine"))
             rows.append(record)
     if not rows:
         raise SportteryError("official fixed-bonus payload has no recognized market history")
@@ -315,7 +318,7 @@ def _result_items(payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     if isinstance(value, list):
         return [item for item in value if isinstance(item, Mapping)]
     if isinstance(value, Mapping):
-        for key in ("list", "matchList", "matchInfoList", "data", "items"):
+        for key in ("list", "matchList", "matchInfoList", "matchResult", "data", "items"):
             candidate = value.get(key)
             if isinstance(candidate, list):
                 return [item for item in candidate if isinstance(item, Mapping)]
@@ -358,7 +361,10 @@ def normalize_uniform_results(
             raise SportteryError("official result row has no matchId")
         final = _score(item.get("sectionsNo999") or item.get("finalScore") or item.get("score"))
         half = _score(item.get("sectionsNo1") or item.get("halfScore"))
-        status_text = str(item.get("matchStatus") or item.get("status") or "").casefold()
+        status_text = str(
+            item.get("matchStatus") or item.get("matchResultStatus")
+            or item.get("resultStatus") or item.get("status") or ""
+        ).casefold()
         status = "finished" if final is not None else "void" if any(word in status_text for word in ("cancel", "void", "延期", "取消")) else "pending"
         record: dict[str, Any] = {
             "match_id": str(match_id), "source": "sporttery-uniform-result",

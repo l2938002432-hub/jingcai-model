@@ -17,4 +17,5 @@ mlruns/
 reports/
 .npm-cache/
 data/snapshots/
+data/official-history/
 data/private/

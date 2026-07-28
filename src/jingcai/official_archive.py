@@ -89,6 +89,9 @@ class ImmutablePayloadArchive:
             "retrieved_at": retrieved_at.astimezone(UTC).isoformat(),
             "relative_path": relative.as_posix(), "representation": representation,
         }
-        key = f"{name}:{params_hash}:{payload_hash}"
+        # A later observation of the same upstream body is still an auditable
+        # event with a new retrieval time; the content file itself remains
+        # deduplicated by hash.
+        key = f"{name}:{params_hash}:{payload_hash}:{record['retrieved_at']}"
         event_hash = AppendOnlyJsonlStore(self.root / day / "index.jsonl").append_once(key, record)
         return ArchiveReceipt(payload_hash, canonical_hash, relative.as_posix(), event_hash)
