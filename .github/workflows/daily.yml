@@ -142,7 +142,8 @@ jobs:
             --html "${{ steps.report.outputs.html }}" \
             --json "${{ steps.report.outputs.json }}" \
             --output-dir artifacts/site \
-            --release-id "${{ steps.report.outputs.release_id }}"
+            --release-id "${{ steps.report.outputs.release_id }}" \
+            --settlement artifacts/daily/prospective-settlements.json
       - name: Persist sanitized public history
         shell: bash
         env:

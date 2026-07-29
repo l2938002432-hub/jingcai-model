@@ -42,11 +42,13 @@ class PublicSiteTests(unittest.TestCase):
             self.assertEqual(site / "reports" / "2026-07-26" / "run-123", dated)
             for path in (
                 site / "index.html", site / "report.json",
+                site / "matches" / "index.html", site / "candidates" / "index.html", site / "review" / "index.html",
                 dated / "index.html", dated / "report.json",
                 site / "reports" / "index.html", site / "reports" / "index.json",
             ):
                 self.assertTrue(path.exists(), path)
             self.assertIn("2026-07-26/run-123/", (site / "reports" / "index.html").read_text(encoding="utf-8"))
+            self.assertIn("收益复盘", (site / "review" / "index.html").read_text(encoding="utf-8"))
 
     def test_public_metadata_uses_a_strict_allowlist(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

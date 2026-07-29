@@ -191,8 +191,11 @@ def render_daily_report(
 <meta name="robots" content="noindex"><title>竞彩概率研究日报 {report_date}</title>
 <style>
 :root{{--bg:#f4f7fb;--panel:#fff;--text:#172033;--muted:#667085;--line:#e3e8ef;--brand:#155eef;--ok:#087443;--warn:#9a6700;--danger:#b42318}}
+html[data-theme="night"]{{--bg:#171716;--panel:#242321;--text:#f5f2eb;--muted:#b5afa4;--line:#45413b;--brand:#e98a4f;--ok:#6ecf9b;--danger:#ff9a8d}}
+html[data-theme="blue"]{{--bg:#eef3fa;--panel:#ffffff;--text:#152238;--muted:#60708a;--line:#d6dfec;--brand:#285ea8;--ok:#167a58;--danger:#bb3f3f}}
 *{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.55}}
 .shell{{max-width:1180px;margin:auto;padding:24px}}header{{display:flex;justify-content:space-between;gap:18px;align-items:end;margin-bottom:18px}}
+.top-nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 18px;padding:10px 12px;background:var(--panel);border:1px solid var(--line);border-radius:14px}}.nav-links,.theme-switch{{display:flex;gap:7px;flex-wrap:wrap}}.nav-links a,.theme-switch button{{border:1px solid var(--line);background:transparent;color:var(--text);border-radius:9px;padding:7px 10px;text-decoration:none;font:inherit;font-size:.85rem;cursor:pointer}}.nav-links a:hover,.theme-switch button:hover{{border-color:var(--brand);color:var(--brand)}}
 h1{{font-size:clamp(1.55rem,4vw,2.25rem);margin:0}}h2{{font-size:1.2rem;margin:0 0 14px}}h3{{font-size:1rem;margin:8px 0}}p{{margin:.35rem 0}}
 .meta,.hint,.cutoff{{color:var(--muted);font-size:.88rem}}.panel{{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:0 3px 12px rgba(16,24,40,.04)}}
 .dashboard{{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:12px}}.metric{{background:#f8faff;border-radius:12px;padding:14px}}.metric strong{{display:block;font-size:1.25rem}}
@@ -205,12 +208,14 @@ dl{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:12px 0}}dl d
 .error{{min-height:1.5em;color:var(--danger);font-size:.88rem}}.results{{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}}.result{{background:#f8faff;border-radius:10px;padding:10px}}.result strong{{display:block;font-size:1.08rem}}.allocation{{margin-top:12px;padding:0;list-style:none}}.allocation li{{padding:8px 0;border-bottom:1px solid var(--line)}}
 .empty{{text-align:center;padding:30px 12px;color:var(--muted)}}footer{{padding:8px 2px 28px;color:var(--muted);font-size:.84rem}}
 .fixture-list{{display:grid;gap:12px}}.fixture-card{{border:1px solid var(--line);border-radius:12px;padding:14px}}.fixture-head{{display:flex;justify-content:space-between;gap:16px}}.fixture-head h3 span{{color:var(--muted);font-weight:400}}.fixture-time{{text-align:right;color:var(--muted);font-size:.82rem}}.market-list{{display:grid;gap:7px;margin-top:10px}}.market-row{{display:grid;grid-template-columns:170px 1fr;gap:10px;padding:8px;background:#f8faff;border-radius:8px}}.market-row div{{display:flex;flex-wrap:wrap;gap:6px 14px}}.market-row span{{white-space:nowrap}}.market-status{{display:inline-block;margin-left:4px;border-radius:99px;padding:1px 6px;font-size:.68rem;font-style:normal;font-weight:700}}.market-status.approved{{background:#dcfae6;color:#087443}}.market-status.display-only{{background:#eef2f6;color:#667085}}
+details.market-row{{display:block}}details.market-row summary{{cursor:pointer;font-weight:700;list-style:none}}details.market-row summary::-webkit-details-marker{{display:none}}details.market-row summary::after{{content:"展开";float:right;color:var(--muted);font-size:.78rem}}details.market-row[open] summary::after{{content:"收起"}}details.market-row>div{{margin-top:9px}}html[data-view="matches"] main>section:nth-of-type(4),html[data-view="matches"] main>section:nth-of-type(5),html[data-view="matches"] main>section:nth-of-type(6){{display:none}}html[data-view="candidates"] main>section:nth-of-type(3),html[data-view="candidates"] main>section:nth-of-type(6){{display:none}}html[data-view="review"] main>section:nth-of-type(3),html[data-view="review"] main>section:nth-of-type(4),html[data-view="review"] main>section:nth-of-type(5){{display:none}}
 @media(max-width:760px){{.shell{{padding:14px}}header{{display:block}}.dashboard{{grid-template-columns:1fr 1fr}}.dashboard .status{{grid-column:1/-1}}.table-wrap{{display:none}}.cards{{display:grid;gap:12px}}.match-card{{border:1px solid var(--line);border-radius:12px;padding:14px}}.budget-grid{{grid-template-columns:1fr}}.results{{grid-template-columns:1fr 1fr}}}}
 @media(max-width:760px){{.fixture-head{{display:block}}.fixture-time{{text-align:left;margin-top:6px}}.market-row{{grid-template-columns:1fr}}}}
 @media(max-width:360px){{.dashboard,.results{{grid-template-columns:1fr}}.dashboard .status{{grid-column:auto}}}}
 </style></head><body><main class="shell">
 <header><div><p class="meta">报告日期 {report_date}</p><h1>竞彩决策驾驶舱</h1></div>
 <p class="meta">北京时间显示 · 仅供概率研究</p></header>
+<nav class="top-nav" aria-label="页面导航"><div class="nav-links"><a href="/jingcai-model/">每日比赛</a><a href="/jingcai-model/candidates/">候选决策</a><a href="/jingcai-model/review/">收益复盘</a></div><div class="theme-switch" aria-label="主题"><button type="button" data-theme="warm">暖白</button><button type="button" data-theme="night">夜间</button><button type="button" data-theme="blue">深蓝</button></div></nav>
 <section class="panel dashboard">
 <div class="metric status {fresh_class}{recommend_class}"><span>今日结论</span><strong>{html.escape(conclusion)}</strong></div>
 <div class="metric"><span>研究候选</span><strong>{len(candidates)} 个</strong></div>
@@ -238,6 +243,8 @@ dl{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:12px 0}}dl d
 <p class="hint">单项返奖 = 该项模拟投入 × 参考奖金；单项命中时的组合净盈亏 = 该项返奖 − 全部模拟投入。返奖不是利润，且奖金可能在购买前变化。</p>
 </section>
 <footer>仅供个人概率研究，不保证中奖或盈利；系统不自动投注。未知、过期或未通过验收的数据不会生成正式建议。</footer>
+</section>
+<section class="panel review-panel"><h2>收益复盘</h2><p class="hint">只有赛前冻结、赛后由官方结果确认的比赛才会计入收益。未结束比赛不会写入 ROI。</p><div class="results"><div class="result"><span>已结算场次</span><strong>等待赛果</strong></div><div class="result"><span>累计 ROI</span><strong>—</strong></div><div class="result"><span>最大回撤</span><strong>—</strong></div></div></section>
 </main>
 <script id="candidate-data" type="application/json">{candidate_json}</script>
 <script>
@@ -245,6 +252,9 @@ dl{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:12px 0}}dl d
 const reportDate={json.dumps(report_date)}, today=new Intl.DateTimeFormat("en-CA",{{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit"}}).format(new Date());
 if(reportDate!==today)document.getElementById("history-alert").classList.add("show");
 const candidates=JSON.parse(document.getElementById("candidate-data").textContent);
+const savedTheme=localStorage.getItem("jingcai-theme")||"warm";if(savedTheme!=="warm")document.documentElement.dataset.theme=savedTheme;
+document.querySelectorAll("[data-theme]").forEach(button=>button.addEventListener("click",()=>{{const theme=button.dataset.theme;document.documentElement.dataset.theme=theme==="warm"?"":theme;localStorage.setItem("jingcai-theme",theme);}}));
+document.querySelectorAll(".fixture-card").forEach(card=>{{card.querySelectorAll(".market-row").forEach((row,index)=>{{if(index===0)return;const details=document.createElement("details");details.className="market-row";const title=row.querySelector("strong"),body=row.querySelector("div"),summary=document.createElement("summary");summary.innerHTML=title?title.innerHTML:"玩法赔率";details.append(summary);if(body)details.append(body);row.replaceWith(details);}});}});
 const input=document.getElementById("budget"),error=document.getElementById("budget-error"),list=document.getElementById("allocation");
 const money=n=>n.toLocaleString("zh-CN",{{minimumFractionDigits:2,maximumFractionDigits:2}});
 const set=(id,value)=>document.getElementById(id).textContent=value;
