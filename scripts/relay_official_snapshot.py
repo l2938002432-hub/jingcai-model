@@ -38,29 +38,19 @@ def dispatch(
         else fetch_sporttery_payload()
     )
     encoded, digest = encode_snapshot(payload)
-    workflow_inputs = json.dumps(
-        {
-            "ref": branch,
-            "inputs": {"snapshot_gzip_base64": encoded, "snapshot_sha256": digest},
-        },
-        separators=(",", ":"),
-    )
-    completed = runner(
-        [
-            _github_cli(),
-            "api",
-            "--method",
-            "POST",
-            f"repos/{repository}/actions/workflows/daily.yml/dispatches",
-            "--input",
-            "-",
-        ],
-        input=workflow_inputs,
-        text=True,
-        capture_output=True,
-        check=True,
-        cwd=PROJECT_ROOT,
-    )
+    try:
+        completed = runner(
+            [
+                _github_cli(), "workflow", "run", "daily.yml", "--repo", repository,
+                "--ref", branch,
+                "--raw-field", f"snapshot_gzip_base64={encoded}",
+                "--raw-field", f"snapshot_sha256={digest}",
+            ],
+            text=True, capture_output=True, check=True, cwd=PROJECT_ROOT,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "GitHub dispatch failed").strip()
+        raise RuntimeError(f"GitHub workflow dispatch failed: {detail}") from exc
     return str(getattr(completed, "stdout", "")).strip() or "cloud workflow dispatched"
 
 

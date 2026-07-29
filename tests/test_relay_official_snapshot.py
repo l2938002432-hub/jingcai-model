@@ -33,7 +33,7 @@ class RelayOfficialSnapshotTests(unittest.TestCase):
         "scripts.relay_official_snapshot.fetch_sporttery_payload",
         return_value={"success": True, "value": {"matchInfoList": []}},
     )
-    def test_dispatch_sends_snapshot_via_stdin_not_command_line(
+    def test_dispatch_passes_public_snapshot_as_workflow_input(
         self, _fetch: MagicMock, _encode: MagicMock, _gh: MagicMock
     ) -> None:
         runner = MagicMock()
@@ -41,13 +41,10 @@ class RelayOfficialSnapshotTests(unittest.TestCase):
         result = dispatch(repository="owner/repo", runner=runner)
         self.assertEqual("https://example.invalid/run", result)
         command = runner.call_args.args[0]
-        self.assertNotIn("encoded", command)
-        self.assertEqual("api", command[1])
-        self.assertIn("--input", command)
-        body = json.loads(runner.call_args.kwargs["input"])
-        self.assertEqual("encoded", body["inputs"]["snapshot_gzip_base64"])
-        self.assertEqual("a" * 64, body["inputs"]["snapshot_sha256"])
-        self.assertEqual("main", body["ref"])
+        self.assertEqual(["workflow", "run", "daily.yml"], command[1:4])
+        self.assertIn("snapshot_gzip_base64=encoded", command)
+        self.assertIn(f"snapshot_sha256={'a' * 64}", command)
+        self.assertNotIn("input", runner.call_args.kwargs)
         self.assertTrue(runner.call_args.kwargs["check"])
 
 
