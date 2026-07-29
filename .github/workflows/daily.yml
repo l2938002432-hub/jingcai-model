@@ -41,6 +41,7 @@ jobs:
           path: |
             artifacts/daily/.notification-dedupe.json
             artifacts/daily/prospective-candidates.jsonl
+            artifacts/daily/prospective-settlements.json
           key: daily-notification-${{ steps.run-date.outputs.date }}-${{ github.run_id }}
           restore-keys: |
             daily-notification-${{ steps.run-date.outputs.date }}-
@@ -99,6 +100,11 @@ jobs:
             if [ "$attempt" -lt 3 ]; then sleep 20; fi
           done
           exit 1
+      - name: Settle frozen prospective candidates
+        env:
+          PYTHONPATH: src
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python scripts/settle_frozen_candidates.py --frozen artifacts/daily/prospective-candidates.jsonl --output artifacts/daily/prospective-settlements.json
       - name: Resolve generated report metadata
         id: report
         shell: bash
