@@ -50,6 +50,8 @@ class DailyCloudRunTests(unittest.TestCase):
             report = json.loads(report_json.read_text(encoding="utf-8"))
             self.assertEqual((report["fixtures"], report["candidates"]), (6, 1))
             self.assertEqual(1, report["notification_candidates"])
+            self.assertEqual(1, report["newly_frozen_candidates"])
+            self.assertTrue((Path(directory) / "prospective-candidates.jsonl").exists())
             self.assertEqual("胜平负", report["candidate_details"][0]["market_label"])
             self.assertRegex(report["release_id"], r"^2026-07-23-[0-9a-f]{12}$")
             self.assertTrue(captured["require_configured"])
@@ -74,6 +76,7 @@ class DailyCloudRunTests(unittest.TestCase):
             _, report_json, _, result = run(Path(directory), fetcher=lambda: PAYLOAD, live_runner=runner, notifier=notify)
             self.assertEqual((False, True), (notified, result.duplicate))
             self.assertEqual(0, json.loads(report_json.read_text(encoding="utf-8"))["notification_candidates"])
+            self.assertEqual(0, json.loads(report_json.read_text(encoding="utf-8"))["newly_frozen_candidates"])
 
     def test_all_notification_channels_failed_fails_the_task(self) -> None:
         def notify(*args, **kwargs):

@@ -38,7 +38,9 @@ jobs:
       - name: Restore notification idempotency state
         uses: actions/cache@v4
         with:
-          path: artifacts/daily/.notification-dedupe.json
+          path: |
+            artifacts/daily/.notification-dedupe.json
+            artifacts/daily/prospective-candidates.jsonl
           key: daily-notification-${{ steps.run-date.outputs.date }}-${{ github.run_id }}
           restore-keys: |
             daily-notification-${{ steps.run-date.outputs.date }}-

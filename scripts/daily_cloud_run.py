@@ -14,6 +14,7 @@ from typing import Any, Callable
 from jingcai.__main__ import main as jingcai_main
 from jingcai.daily import parse_official_update
 from jingcai.ledger import Ledger, LedgerKind, ReleaseManifest, freeze_release
+from jingcai.frozen_registry import freeze_new_candidates
 from jingcai.notifications import NotificationSummary, send_configured
 from jingcai.notification_window import select_notification_candidates
 from jingcai.projections import public_release_projection
@@ -201,6 +202,11 @@ def run(
     }
     notification_candidates = select_notification_candidates(candidate_details, observed_at=source_as_of)
     report["notification_candidates"] = len(notification_candidates)
+    frozen_candidates = freeze_new_candidates(
+        output_dir / "prospective-candidates.jsonl", notification_candidates,
+        frozen_at=source_as_of,
+    )
+    report["newly_frozen_candidates"] = len(frozen_candidates)
     json_path = output_dir / f"report-{report_date}.json"
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
