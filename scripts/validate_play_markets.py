@@ -3,10 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import asdict
+from itertools import groupby
 
 from jingcai.market_validation import validate_markets
 from jingcai.models import DixonColesModel, HalfFullModel
-from jingcai.models.poisson import field
+from jingcai.models.poisson import match_timestamp
 from jingcai.providers.club_history import load_club_history_csv
 
 
@@ -30,22 +31,34 @@ def main() -> int:
         raise RuntimeError("not enough history for requested lockbox")
     split = len(rows) - args.lockbox
     forecasts: list[dict[str, object]] = []
-    for index in range(split, len(rows)):
-        test = rows[index]
+    training_rows: list[dict[str, object]] = []
+    baseline_history: list[dict[str, object]] | None = None
+    for kickoff, batch_iter in groupby(rows, key=match_timestamp):
+        batch = list(batch_iter)
+        # The lockbox boundary may fall inside a simultaneous kick-off batch.
+        # Skip that whole batch rather than allowing one final score to train a
+        # forecast for another match that started at the same instant.
+        if len(training_rows) < split:
+            training_rows.extend(batch)
+            continue
+        if baseline_history is None:
+            baseline_history = list(training_rows)
         model = DixonColesModel().fit(
-            rows[:index],
-            as_of=field(test, "kickoff_utc", "kickoff_date", "date"),
+            training_rows,
+            as_of=kickoff,
         )
-        forecast = dict(test)
-        forecast["score_matrix"] = _matrix(
-            model, str(test["home_team"]), str(test["away_team"])
-        )
-        if test.get("half_home_goals") is not None and test.get("half_away_goals") is not None:
-            forecast["half_full_probabilities"] = HalfFullModel(model).predict_proba(
-                str(test["home_team"]), str(test["away_team"])
+        for test in batch:
+            forecast = dict(test)
+            forecast["score_matrix"] = _matrix(
+                model, str(test["home_team"]), str(test["away_team"])
             )
-        forecasts.append(forecast)
-    results = validate_markets(forecasts, baseline_history=rows[:split])
+            if test.get("half_home_goals") is not None and test.get("half_away_goals") is not None:
+                forecast["half_full_probabilities"] = HalfFullModel(model).predict_proba(
+                    str(test["home_team"]), str(test["away_team"])
+                )
+            forecasts.append(forecast)
+        training_rows.extend(batch)
+    results = validate_markets(forecasts, baseline_history=baseline_history or training_rows)
     print(json.dumps({name: asdict(value) for name, value in results.items()}, ensure_ascii=False, indent=2))
     return 0
 

@@ -1,6 +1,7 @@
 import math
 import unittest
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 from jingcai.pipeline import (
     build_paper_candidates,
@@ -50,6 +51,29 @@ class PipelineTests(unittest.TestCase):
     def test_walk_forward_accepts_frozen_time_decay(self) -> None:
         result = walk_forward_1x2(synthetic_matches(), min_train=12, half_life_days=365)
         self.assertEqual(12, result.evaluated_matches)
+
+    def test_walk_forward_does_not_train_on_another_same_kickoff_result(self) -> None:
+        rows = synthetic_matches(8)
+        shared_kickoff = rows[4]["kickoff_utc"]
+        rows[5]["kickoff_utc"] = shared_kickoff
+        fitted_training_sets: list[list[dict[str, object]]] = []
+
+        class RecordingModel:
+            def fit(self, training, **_kwargs):
+                fitted_training_sets.append(list(training))
+                return self
+
+            def predict_score_matrix(self, _home, _away, _max_goals):
+                return [[1.0, 0.0], [0.0, 0.0]]
+
+        with patch("jingcai.pipeline.DixonColesModel", RecordingModel):
+            result = walk_forward_1x2(rows, min_train=4, max_goals=1)
+
+        self.assertEqual(4, result.evaluated_matches)
+        # The simultaneous pair is predicted from only the four strictly
+        # earlier matches; neither member is present in its model training set.
+        self.assertEqual(4, len(fitted_training_sets[0]))
+        self.assertTrue(all(item["kickoff_utc"] != shared_kickoff for item in fitted_training_sets[0]))
 
     def test_predict_all_five_markets(self) -> None:
         result = predict_all_markets(synthetic_matches(), home_team="A", away_team="B", handicap=-1)

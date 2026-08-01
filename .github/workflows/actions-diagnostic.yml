@@ -1,0 +1,28 @@
+name: Actions Dispatch Diagnostic
+run-name: "Actions diagnostic · ${{ github.event_name }} · ${{ github.sha }}"
+
+# This workflow is deliberately isolated from the daily pipeline.  It is the
+# smallest possible proof that GitHub can parse a workflow and allocate a job.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove-job-allocation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Record non-secret dispatch evidence
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_ID: ${{ github.run_id }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          COMMIT_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          test "$EVENT_NAME" = "workflow_dispatch"
+          printf 'event=%s\nrun_id=%s\nworkflow_ref=%s\ncommit=%s\nref=%s\n' \
+            "$EVENT_NAME" "$RUN_ID" "$WORKFLOW_REF" "$COMMIT_SHA" "$REF_NAME"

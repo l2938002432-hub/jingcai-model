@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from itertools import groupby
 import json
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
@@ -102,20 +103,29 @@ def walk_forward_1x2(
         raise ValueError("walk-forward evaluation needs more matches than min_train")
     model_observations: list[ForecastObservation] = []
     baseline_observations: list[ForecastObservation] = []
-    for index in range(min_train, len(rows)):
-        train = rows[:index]
-        test = rows[index]
+    train: list[Mapping[str, Any]] = []
+    for kickoff, batch_iter in groupby(rows, key=match_timestamp):
+        batch = list(batch_iter)
+        # A kick-off timestamp is an atomic evaluation batch.  In particular,
+        # never let an earlier item in this batch become training data for a
+        # later item in the same batch.
+        if len(train) < min_train:
+            train.extend(batch)
+            continue
         model = DixonColesModel().fit(
             train,
-            as_of=field(test, "kickoff_utc", "kickoff_date", "kickoff", "date", "timestamp"),
+            as_of=kickoff,
             half_life_days=half_life_days,
         )
-        probabilities = result_1x2(
-            matrix_mapping(model.predict_score_matrix(str(test["home_team"]), str(test["away_team"]), max_goals))
-        )
-        actual = actual_result(int(test["home_goals"]), int(test["away_goals"]))
-        model_observations.append(ForecastObservation(probabilities, actual))
-        baseline_observations.append(ForecastObservation(_frequency_baseline(train), actual))
+        baseline_probabilities = _frequency_baseline(train)
+        for test in batch:
+            probabilities = result_1x2(
+                matrix_mapping(model.predict_score_matrix(str(test["home_team"]), str(test["away_team"]), max_goals))
+            )
+            actual = actual_result(int(test["home_goals"]), int(test["away_goals"]))
+            model_observations.append(ForecastObservation(probabilities, actual))
+            baseline_observations.append(ForecastObservation(baseline_probabilities, actual))
+        train.extend(batch)
     return WalkForwardResult(
         evaluated_matches=len(model_observations),
         model_log_loss=log_loss(model_observations),
