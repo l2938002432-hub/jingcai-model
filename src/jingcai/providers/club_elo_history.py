@@ -11,6 +11,7 @@ import csv
 import math
 from bisect import bisect_left
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -21,6 +22,15 @@ from jingcai.models.poisson import match_timestamp
 
 class ClubEloHistoryError(ValueError):
     """The source cannot support a safe point-in-time lookup."""
+
+
+@dataclass(frozen=True)
+class EloObservation:
+    """A rating observation that was visible before a particular match."""
+
+    snapshot_date: date
+    rating: float
+    association: str
 
 
 def _date(value: date | datetime | str | float | int) -> date:
@@ -82,12 +92,33 @@ class ClubEloHistory:
         index = bisect_left([item[0] for item in values], before) - 1
         return None if index < 0 else values[index]
 
-    def rating_before(self, team: str, as_of: date | datetime | str | float | int) -> float:
+    def observation_before(self, team: str, as_of: date | datetime | str | float | int) -> EloObservation:
+        """Return the auditable rating observation strictly before ``as_of``.
+
+        ClubElo source rows are day-granular.  Therefore a same-day row is
+        deliberately excluded instead of guessing whether it preceded kickoff.
+        """
         cutoff = _date(as_of)
         result = self._latest(team, cutoff)
         if result is None:
             raise ClubEloHistoryError(f"no snapshot for {team!r} before {cutoff}")
-        return result[1]
+        snapshot_date, rating, association = result
+        return EloObservation(snapshot_date, rating, association)
+
+    def rating_before(self, team: str, as_of: date | datetime | str | float | int) -> float:
+        return self.observation_before(team, as_of).rating
+
+    def snapshot_before(self, team: str, as_of: date | datetime | str | float | int) -> tuple[date, float, str]:
+        """Return the dated observation visible strictly before ``as_of``.
+
+        The date is returned with the rating so research reports can make the
+        age and provenance of their point-in-time inputs auditable.
+        """
+        cutoff = _date(as_of)
+        result = self._latest(team, cutoff)
+        if result is None:
+            raise ClubEloHistoryError(f"no snapshot for {team!r} before {cutoff}")
+        return result
 
     def association_priors(self, as_of: date | datetime | str | float | int) -> dict[str, float]:
         """Return means over each club's latest visible snapshot, not all rows."""

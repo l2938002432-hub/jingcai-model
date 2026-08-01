@@ -17,6 +17,7 @@ class ClubHistoryTests(unittest.TestCase):
             rows = list(load_club_history_csv(path, divisions={"BRA"}, since="2023-01-01"))
             self.assertEqual(1, len(rows))
             self.assertEqual("Flamengo", rows[0]["home_team"])
+            self.assertEqual("exact", rows[0]["kickoff_precision"])
 
     def test_rejects_bad_schema(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -36,6 +37,16 @@ class ClubHistoryTests(unittest.TestCase):
             )
             rows = list(load_club_history_csv(path, divisions={"BRA"}))
             self.assertEqual(["C"], [row["home_team"] for row in rows])
+
+    def test_marks_missing_match_time_as_date_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "matches.csv"
+            path.write_text(
+                "Division,MatchDate,HomeTeam,AwayTeam,FTHome,FTAway\n"
+                "BRA,2026-07-20,A,B,1,0\n", encoding="utf-8"
+            )
+            row = list(load_club_history_csv(path))[0]
+            self.assertEqual("date_only", row["kickoff_precision"])
 
     def test_preserves_half_time_labels_and_pre_match_elo_when_available(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
