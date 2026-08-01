@@ -196,6 +196,11 @@ def render_daily_report(
 <p class="hint"><span class="tag">{html.escape(status_labels.get(analysis_status, analysis_status))}</span> {html.escape(analysis_reason)}</p>
 <div class="market-list">{''.join(market_blocks) or '<p>暂无在售玩法</p>'}</div></article>"""
         )
+    coverage_text = (
+        f"官方在售 {len(fixtures)} 场；可进入候选筛选 {coverage['candidate_eligible']} 场；"
+        f"研究观察 {coverage['research_observation']} 场；数据不足 {coverage['data_insufficient']} 场；"
+        f"安全拒绝 {coverage['safety_rejected']} 场。"
+    )
 
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -235,7 +240,7 @@ details.market-row{{display:block}}details.market-row summary{{cursor:pointer;fo
 </section>
 <section class="panel"><h2>数据状态</h2><p>生成时间：{html.escape(generated_text)}</p>
 <p>官方数据时间：{html.escape(source_text)}</p>
-<div id="history-alert" class="history-alert" role="status">你正在查看历史报告，数据和奖金可能已变化，请勿当作今日建议。</div></section>
+<p class="hint">{html.escape(coverage_text)}</p><div id="history-alert" class="history-alert" role="status">你正在查看历史报告，数据和奖金可能已变化，请勿当作今日建议。</div></section>
 <section class="panel"><h2>今日全部竞彩比赛</h2>
 <p class="hint">以下按竞彩官方中文名称展示全部在售比赛和五类玩法参考奖金；未通过模型验收的玩法只展示，不推荐。</p>
 <div class="fixture-list">{''.join(fixture_cards) or '<div class="empty">暂无官方在售比赛</div>'}</div></section>
