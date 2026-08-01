@@ -23,6 +23,8 @@ FIXTURE_FIELDS = (
     "model_approved",
     "approved_markets",
     "recommendation_eligible",
+    "analysis_status",
+    "analysis_reason",
 )
 
 CANDIDATE_FIELDS = (

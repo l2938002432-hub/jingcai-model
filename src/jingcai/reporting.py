@@ -145,6 +145,13 @@ def render_daily_report(
     fresh_class = "ok" if data_fresh else "danger"
     recommend_class = "" if can_recommend else " research"
     fixture_cards: list[str] = []
+    status_labels = {
+        "candidate_eligible": "可进入候选筛选",
+        "research_observation": "研究观察",
+        "data_insufficient": "数据不足",
+        "safety_rejected": "安全拒绝",
+    }
+    coverage = {key: 0 for key in status_labels}
     for fixture in fixtures:
         home = str(fixture.get("display_home_team") or fixture.get("home_team", "主队"))
         away = str(fixture.get("display_away_team") or fixture.get("away_team", "客队"))
@@ -154,6 +161,9 @@ def render_daily_report(
         cutoff = str(fixture.get("sale_cutoff", "未提供"))
         approved_markets = set(fixture.get("approved_markets", ()))
         recommendation_eligible = fixture.get("recommendation_eligible", False) is True
+        analysis_status = str(fixture.get("analysis_status", "data_insufficient"))
+        analysis_reason = str(fixture.get("analysis_reason", "未提供分析状态"))
+        coverage[analysis_status] = coverage.get(analysis_status, 0) + 1
         market_blocks: list[str] = []
         odds_by_market = fixture.get("odds", {})
         if isinstance(odds_by_market, Mapping):
@@ -183,6 +193,7 @@ def render_daily_report(
 <div><b>{html.escape(number)} · {html.escape(competition)}</b>
 <h3>{html.escape(home)} <span>vs</span> {html.escape(away)}</h3></div>
 <div class="fixture-time">开赛 {html.escape(kickoff)}<br>停售 {html.escape(cutoff)}</div></div>
+<p class="hint"><span class="tag">{html.escape(status_labels.get(analysis_status, analysis_status))}</span> {html.escape(analysis_reason)}</p>
 <div class="market-list">{''.join(market_blocks) or '<p>暂无在售玩法</p>'}</div></article>"""
         )
 
