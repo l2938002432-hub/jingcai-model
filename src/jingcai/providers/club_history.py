@@ -37,7 +37,13 @@ def load_club_history_csv(
                 match_date = datetime.fromisoformat(row["MatchDate"].strip()).date()
                 if since_date and match_date < since_date:
                     continue
-                raw_time = (row.get("MatchTime") or "12:00:00").strip() or "12:00:00"
+                supplied_time = (row.get("MatchTime") or "").strip()
+                # A date-only fixture cannot establish a safe chronological
+                # relationship to other fixtures that day.  Keep it importable
+                # for descriptive history, but make its precision explicit so
+                # point-in-time training can reject it instead of trusting the
+                # legacy noon placeholder.
+                raw_time = supplied_time or "12:00:00"
                 match_time = time.fromisoformat(raw_time)
                 kickoff = datetime.combine(match_date, match_time, tzinfo=UTC)
                 home_score, away_score = float(row["FTHome"]), float(row["FTAway"])
@@ -63,6 +69,7 @@ def load_club_history_csv(
                 # Retain the source text so downstream integrity checks can
                 # detect ambiguous numeric dates instead of silently guessing.
                 "source_match_date": row["MatchDate"].strip(),
+                "kickoff_precision": "exact" if supplied_time else "date_only",
                 **_optional_numeric_fields(row, index),
             }
 
