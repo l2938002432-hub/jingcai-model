@@ -5,9 +5,12 @@ from jingcai.domain import Market, Selection, TicketBundle
 from jingcai.portfolio import (
     Candidate,
     GateLimits,
+    StrategyEvidence,
+    admit_strategy,
     allocate_budget,
     gate_bundle,
     payout_distribution,
+    simulate_research_budget,
     single_tickets,
     system_tickets,
     two_leg_tickets,
@@ -18,7 +21,9 @@ NOW = datetime(2026, 7, 26, 8, tzinfo=UTC)
 CUTOFFS = {f"m{i}": NOW + timedelta(hours=i) for i in range(1, 5)}
 
 
-def candidate(index: int, *, approved: bool = True, risk: bool = False) -> Candidate:
+def candidate(
+    index: int, *, approved: bool = True, risk: bool = False, snapshot: bool = True,
+) -> Candidate:
     return Candidate(
         Selection(
             f"p{index}", f"m{index}", Market.MATCH_RESULT, "home", 1.91 + index / 10
@@ -28,6 +33,13 @@ def candidate(index: int, *, approved: bool = True, risk: bool = False) -> Candi
         competition="TEST",
         approved=approved,
         risk_blocked=risk,
+        trusted_odds_snapshot=snapshot,
+    )
+
+
+def evidence(*, approved: bool = True) -> StrategyEvidence:
+    return StrategyEvidence(
+        "single-and-double-v1", "e" * 64, NOW, ("match_result",), approved,
     )
 
 
@@ -47,13 +59,14 @@ class PortfolioTests(unittest.TestCase):
             total_budget=18,
             created_at=NOW,
             sale_cutoffs=CUTOFFS,
+            evidence=evidence(),
         )
         self.assertIsInstance(bundle, TicketBundle)
         self.assertLessEqual(bundle.stake, 18)
         self.assertEqual(18 - bundle.stake, bundle.unused_budget)
         self.assertTrue(all(ticket.stake % 2 == 0 for ticket in bundle.tickets))
         with self.assertRaises(ValueError):
-            allocate_budget([candidate(1)], 3, NOW, CUTOFFS)
+            allocate_budget([candidate(1)], 3, NOW, CUTOFFS, evidence=evidence())
 
     def test_distribution_is_discrete_complete_and_ev_is_reproducible(self) -> None:
         tickets = two_leg_tickets([candidate(1), candidate(2)], 2, NOW, CUTOFFS)
@@ -117,9 +130,9 @@ class PortfolioTests(unittest.TestCase):
 
     def test_empty_risky_buckets_stay_unused_unless_transferred_to_singles(self) -> None:
         rows = [candidate(1)]
-        kept = allocate_budget(rows, 20, NOW, CUTOFFS)
+        kept = allocate_budget(rows, 20, NOW, CUTOFFS, evidence=evidence())
         transferred = allocate_budget(
-            rows, 20, NOW, CUTOFFS, transfer_to_lower_risk=True
+            rows, 20, NOW, CUTOFFS, transfer_to_lower_risk=True, evidence=evidence()
         )
         self.assertEqual(6, kept.unused_budget)
         self.assertEqual(0, transferred.unused_budget)
@@ -149,6 +162,27 @@ class PortfolioTests(unittest.TestCase):
         self.assertTrue(result.joint_probability_gate)
         self.assertTrue(result.rules_gate)
         self.assertFalse(result.economic_gate)
+
+    def test_portfolio_requires_real_snapshot_and_validated_strategy_evidence(self) -> None:
+        rows = [candidate(1, snapshot=False)]
+        admission = admit_strategy(rows, evidence())
+        self.assertFalse(admission.allowed)
+        self.assertIn("trusted_pre_cutoff_odds_missing", admission.reasons)
+        with self.assertRaisesRegex(PermissionError, "strategy_evidence_missing"):
+            allocate_budget(rows, 20, NOW, CUTOFFS)
+        with self.assertRaisesRegex(PermissionError, "trusted_pre_cutoff_odds_missing"):
+            allocate_budget(rows, 20, NOW, CUTOFFS, evidence=evidence())
+        denied = admit_strategy([candidate(1)], evidence(approved=False))
+        self.assertIn("strategy_not_approved", denied.reasons)
+
+    def test_research_budget_simulation_preserves_amount_and_payout_bounds_without_advice(self) -> None:
+        simulation = simulate_research_budget([candidate(1, snapshot=False), candidate(2, snapshot=False)], 10)
+        self.assertEqual((10, 10, 0), (simulation.budget, simulation.allocated, simulation.unallocated))
+        self.assertEqual(0, simulation.minimum_payout)
+        self.assertGreater(simulation.maximum_payout, 0)
+        self.assertEqual(2, len(simulation.lines))
+        for line in simulation.lines:
+            self.assertAlmostEqual(line.payout_if_hit - 10, line.net_if_hit)
 
 
 if __name__ == "__main__":

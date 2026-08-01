@@ -26,6 +26,10 @@ class Candidate:
     competition: str
     approved: bool = True
     risk_blocked: bool = False
+    # A decimal price by itself is not evidence that it was actually available
+    # before the Sporttery sale cutoff.  This must be set from an immutable
+    # snapshot, never inferred from a report payload.
+    trusted_odds_snapshot: bool = False
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -83,11 +87,136 @@ class GateResult:
 
 
 @dataclass(frozen=True)
+class StrategyEvidence:
+    """An auditable approval for one versioned betting strategy.
+
+    A strategy may be researched with model probabilities, but it must not
+    create a recommended ticket bundle until Model QA has supplied this
+    evidence and every included selection has a real pre-cutoff odds snapshot.
+    """
+
+    strategy_id: str
+    evidence_sha256: str
+    validated_at: datetime
+    approved_markets: tuple[str, ...]
+    approved: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.strategy_id:
+            raise ValueError("strategy_id is required")
+        if (
+            len(self.evidence_sha256) != 64
+            or any(char not in "0123456789abcdef" for char in self.evidence_sha256)
+        ):
+            raise ValueError("evidence_sha256 must be a lowercase SHA-256")
+        if self.validated_at.tzinfo is None or self.validated_at.utcoffset() is None:
+            raise ValueError("validated_at must be timezone-aware")
+        if not self.approved_markets or len(set(self.approved_markets)) != len(self.approved_markets):
+            raise ValueError("approved_markets must be a non-empty unique collection")
+
+
+@dataclass(frozen=True)
+class StrategyAdmission:
+    allowed: bool
+    reasons: tuple[str, ...]
+    strategy_id: str | None = None
+    evidence_sha256: str | None = None
+
+
+@dataclass(frozen=True)
+class ResearchBudgetLine:
+    """Non-recommendation amount scenario for a single research observation."""
+
+    match_id: str
+    stake: float
+    payout_if_hit: float
+    net_if_hit: float
+
+
+@dataclass(frozen=True)
+class ResearchBudgetSimulation:
+    """A client-safe budget calculation with no implied profitability claim."""
+
+    budget: float
+    allocated: float
+    unallocated: float
+    minimum_payout: float
+    maximum_payout: float
+    lines: tuple[ResearchBudgetLine, ...]
+
+
+@dataclass(frozen=True)
 class AuditedPayoutDistribution(PayoutDistribution):
     correlation_haircut: float
     algorithm_version: str
     raw_joint_probabilities: tuple[float, ...]
     adjusted_joint_probabilities: tuple[float, ...]
+
+
+def admit_strategy(
+    candidates: Sequence[Candidate], evidence: StrategyEvidence | None,
+) -> StrategyAdmission:
+    """Fail closed before a research idea becomes a recommended portfolio."""
+    reasons: list[str] = []
+    if evidence is None:
+        reasons.append("strategy_evidence_missing")
+    elif not evidence.approved:
+        reasons.append("strategy_not_approved")
+    if any(not row.trusted_odds_snapshot for row in candidates):
+        reasons.append("trusted_pre_cutoff_odds_missing")
+    if evidence is not None:
+        unsupported = {
+            row.selection.market.value for row in candidates
+            if row.selection.market.value not in evidence.approved_markets
+        }
+        if unsupported:
+            reasons.append("market_not_approved_for_strategy")
+    return StrategyAdmission(
+        not reasons,
+        tuple(reasons),
+        evidence.strategy_id if evidence is not None else None,
+        evidence.evidence_sha256 if evidence is not None else None,
+    )
+
+
+def simulate_research_budget(
+    candidates: Sequence[Candidate], total_budget: float,
+) -> ResearchBudgetSimulation:
+    """Calculate stake and hit-payout bounds without creating betting advice.
+
+    This deliberately uses independent, equal single-observation lines.  It is
+    not a portfolio, has no expected-profit field and does not construct
+    purchaseable tickets; callers may use it while strategy admission is shut.
+    """
+    if not isfinite(total_budget) or total_budget <= 0 or total_budget % 2 != 0:
+        raise ValueError("total_budget must be a positive multiple of 2 yuan")
+    if not candidates:
+        raise ValueError("at least one research candidate is required")
+    units = int(total_budget / 2)
+    base, extra = divmod(units, len(candidates))
+    lines = tuple(
+        ResearchBudgetLine(
+            row.selection.match_id,
+            (base + (1 if index < extra else 0)) * 2,
+            round_payout((base + (1 if index < extra else 0)) * 2 * row.selection.decimal_odds),
+            0.0,  # filled after total allocation is known
+        )
+        for index, row in enumerate(candidates)
+        if base + (1 if index < extra else 0)
+    )
+    allocated = sum(line.stake for line in lines)
+    final_lines = tuple(
+        replace(line, net_if_hit=round_payout(line.payout_if_hit - allocated))
+        for line in lines
+    )
+    return ResearchBudgetSimulation(
+        total_budget,
+        allocated,
+        total_budget - allocated,
+        0.0,
+        max((line.payout_if_hit for line in final_lines), default=0.0),
+        final_lines,
+    )
 
 
 def _validate_ticket_inputs(
@@ -272,12 +401,18 @@ def allocate_budget(
     sale_cutoffs: Mapping[str, datetime],
     *,
     transfer_to_lower_risk: bool = False,
+    evidence: StrategyEvidence | None = None,
 ) -> TicketBundle:
     if not isfinite(total_budget) or total_budget <= 0 or total_budget % 2 != 0:
         raise ValueError("total_budget must be a positive multiple of 2 yuan")
     eligible = [row for row in candidates if row.approved and not row.risk_blocked]
     if not eligible:
         raise ValueError("no eligible candidates")
+    admission = admit_strategy(eligible, evidence)
+    if not admission.allowed:
+        raise PermissionError(
+            "recommended portfolio is not admitted: " + ",".join(admission.reasons)
+        )
 
     def units(cap: float, count: int) -> float:
         if count == 0:

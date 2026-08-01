@@ -18,6 +18,11 @@ from jingcai.markets import (
 )
 from jingcai.models import DixonColesModel, HalfFullModel
 from jingcai.models.poisson import field, match_timestamp
+from jingcai.model_governance import (
+    AuditApproval,
+    ExperimentManifest,
+    validate_candidate_approval,
+)
 
 
 MARKET_LABELS = {
@@ -171,6 +176,14 @@ def build_paper_candidates(
     acceptance_config: Mapping[str, Any] | None = None,
     fixture_predictor: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
 ) -> list[dict[str, Any]]:
+    """Build paper candidates only when governance evidence approves each scope.
+
+    Existing acceptance files remain readable, but their legacy ``approved``
+    flag no longer authorises a recommendation on its own.  A root
+    ``_governance`` section must bind the competition/market to a reproducible
+    experiment manifest and a signed audit approval.  Missing or malformed
+    governance records fail closed.
+    """
     if acceptance_config is None:
         acceptance_path = Path(__file__).resolve().parents[2] / "config" / "model-acceptance.json"
         acceptance_config = json.loads(acceptance_path.read_text(encoding="utf-8"))
@@ -216,6 +229,11 @@ def build_paper_candidates(
             if market not in prediction or not isinstance(odds, Mapping):
                 raise ValueError(f"unknown or invalid odds market: {market}")
             if approved_markets.get(market) is not True:
+                continue
+            approval = _candidate_governance_check(
+                acceptance_config, competition_acceptance, competition_code, str(market)
+            )
+            if not approval.approved:
                 continue
             market_probabilities = prediction[market]
             market_baseline = remove_overround({str(k): float(v) for k, v in odds.items()})
@@ -268,9 +286,52 @@ def build_paper_candidates(
                     "odds_as_of": odds_as_of.isoformat(),
                     "sale_cutoff": cutoff.isoformat(),
                     "sale_cutoff_estimated": bool(fixture.get("sale_cutoff_estimated", False)),
+                    "approval_manifest_sha256": approval.manifest_sha256,
                 }
                 if best is None or item["conservative_ev"] > best["conservative_ev"]:
                     best = item
         if best is not None and best["conservative_ev"] > 0:
             candidates.append(best)
     return sorted(candidates, key=lambda item: item["conservative_ev"], reverse=True)
+
+
+def _candidate_governance_check(
+    acceptance_config: Mapping[str, Any], competition_acceptance: Mapping[str, Any],
+    competition_code: str, market: str,
+):
+    """Resolve one config binding into the strict, scope-aware approval gate."""
+    governance = acceptance_config.get("_governance", {})
+    if not isinstance(governance, Mapping):
+        return validate_candidate_approval(
+            acceptance=competition_acceptance, manifest=None, approval=None,
+            competition_code=competition_code, market=market,
+        )
+    bindings = governance.get("bindings", {})
+    binding = (
+        bindings.get(competition_code, {}).get(market, {})
+        if isinstance(bindings, Mapping) and isinstance(bindings.get(competition_code, {}), Mapping)
+        else {}
+    )
+    if not isinstance(binding, Mapping):
+        binding = {}
+    manifests = governance.get("manifests", {})
+    approvals = governance.get("audit_approvals", {})
+    manifest_record = manifests.get(binding.get("manifest_id")) if isinstance(manifests, Mapping) else None
+    approval_record = approvals.get(binding.get("approval_id")) if isinstance(approvals, Mapping) else None
+    try:
+        manifest = (
+            manifest_record if isinstance(manifest_record, ExperimentManifest)
+            else ExperimentManifest.from_record(manifest_record)
+            if isinstance(manifest_record, Mapping) else None
+        )
+        audit_approval = (
+            approval_record if isinstance(approval_record, AuditApproval)
+            else AuditApproval.from_record(approval_record)
+            if isinstance(approval_record, Mapping) else None
+        )
+    except (TypeError, ValueError):
+        manifest, audit_approval = None, None
+    return validate_candidate_approval(
+        acceptance=competition_acceptance, manifest=manifest, approval=audit_approval,
+        competition_code=competition_code, market=market,
+    )

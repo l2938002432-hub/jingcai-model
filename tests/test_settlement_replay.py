@@ -44,6 +44,7 @@ class SettlementReplayTests(unittest.TestCase):
         freeze_release(ledger, ReleaseManifest(
             "release-1", "release-key", NOW, NOW, "a" * 64, "model-v1",
             "b" * 64, "rules-v1", "git", (), (ticket(),),
+            {"allowed": True, "strategy_id": "test-v1", "evidence_sha256": "c" * 64},
         ))
         return ledger
 
