@@ -25,6 +25,7 @@ FIXTURE_FIELDS = (
     "recommendation_eligible",
     "analysis_status",
     "analysis_reason",
+    "research_probability",
 )
 
 CANDIDATE_FIELDS = (

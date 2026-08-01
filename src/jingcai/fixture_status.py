@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 
 STATUS_CANDIDATE = "candidate_eligible"
@@ -16,6 +16,7 @@ STATUS_REJECTED = "safety_rejected"
 def assess_fixtures(
     fixtures: Iterable[Mapping[str, Any]], *, history_teams: Iterable[str],
     acceptance: Mapping[str, Any], now: datetime, data_fresh: bool,
+    research_predictor: Callable[[Mapping[str, Any]], Mapping[str, float] | None] | None = None,
 ) -> list[dict[str, Any]]:
     """Keep every fixture while making recommendation eligibility explicit."""
     trained = {str(team) for team in history_teams}
@@ -37,7 +38,12 @@ def assess_fixtures(
                 if cutoff.tzinfo is None or cutoff <= now:
                     status, reason = STATUS_REJECTED, "已过停售时间或停售时间无效"
                 elif str(row.get("home_team")) not in trained or str(row.get("away_team")) not in trained:
-                    status, reason = STATUS_INSUFFICIENT, "缺少可追溯的球队历史"
+                    research = research_predictor(row) if research_predictor else None
+                    if research is None:
+                        status, reason = STATUS_INSUFFICIENT, "缺少可追溯的球队历史"
+                    else:
+                        status, reason = STATUS_RESEARCH, "使用跨联赛 Elo 生成研究概率，赛事尚未独立验收"
+                        row["research_probability"] = dict(research)
                 elif approved:
                     status, reason = STATUS_CANDIDATE, "赛事玩法已通过独立概率验收"
                 else:

@@ -21,6 +21,7 @@ from jingcai.providers.club_history import load_club_history_csv
 from jingcai.providers.sporttery import fetch_sporttery_payload, normalize_payload, save_snapshot
 from jingcai.providers.uefa import UefaError, normalize_match
 from jingcai.reporting import render_daily_report, render_probability_report, write_report
+from jingcai.research_prediction import research_1x2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -273,9 +274,16 @@ def main(argv: list[str] | None = None) -> int:
             except DailyLiveError:
                 data_fresh = False
             history_teams = [str(row[field]) for row in history for field in ("home_team", "away_team")]
+            research_predictor = None
+            if args.club_elo_csv:
+                try:
+                    research_ratings = ClubEloHistory.from_csv(args.club_elo_csv, TeamAliases(aliases))
+                    research_predictor = lambda fixture: research_1x2(fixture, research_ratings)
+                except ClubEloHistoryError:
+                    research_predictor = None
             all_fixtures = assess_fixtures(
                 fixtures, history_teams=history_teams, acceptance=acceptance,
-                now=now, data_fresh=data_fresh,
+                now=now, data_fresh=data_fresh, research_predictor=research_predictor,
             )
             model_fixtures = [
                 fixture for fixture in all_fixtures if fixture["model_approved"]
