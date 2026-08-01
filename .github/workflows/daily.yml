@@ -1,5 +1,4 @@
 name: Daily Sporttery Feed
-run-name: "竞彩数据链路 · ${{ github.event_name }} · ${{ github.sha }}"
 on:
   schedule:
     - cron: "20 * * * *" # hourly; sends only fresh candidates at T-120 to T-60
