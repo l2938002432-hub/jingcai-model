@@ -187,12 +187,19 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
       - name: Alert Feishu when the pipeline fails
-        if: ${{ failure() && secrets.FEISHU_WEBHOOK_URL != '' }}
+        # GitHub Actions does not permit the secrets context inside a step-level
+        # `if` expression.  Keep the condition secret-free so workflow parsing
+        # can complete; the script safely exits when no webhook is configured.
+        if: ${{ failure() }}
         continue-on-error: true
         env:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
         shell: bash
         run: |
+          if [ -z "$FEISHU_WEBHOOK_URL" ]; then
+            echo "No Feishu webhook configured; skipping failure notification."
+            exit 0
+          fi
           text="竞彩云端任务异常，未生成候选或推送。请检查：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           payload="$(jq -nc --arg text "$text" '{msg_type:"text",content:{text:$text}}')"
           curl --fail --silent --show-error --request POST \

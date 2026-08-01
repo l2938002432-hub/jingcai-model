@@ -20,6 +20,13 @@ class DailyWorkflowContractTests(unittest.TestCase):
         self.assertIn("EVENT_NAME: ${{ github.event_name }}", workflow)
         self.assertIn("HAS_RELAY_INPUT: ${{ inputs.snapshot_gzip_base64 != '' }}", workflow)
 
+    def test_failure_alert_does_not_reference_secrets_in_if_expression(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        alert = workflow.split("- name: Alert Feishu when the pipeline fails", maxsplit=1)[1]
+        self.assertIn("if: ${{ failure() }}", alert)
+        self.assertNotIn("if: ${{ failure() && secrets.", alert)
+        self.assertIn('if [ -z "$FEISHU_WEBHOOK_URL" ]; then', alert)
+
 
 if __name__ == "__main__":
     unittest.main()
