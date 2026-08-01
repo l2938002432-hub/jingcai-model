@@ -63,6 +63,7 @@ class ReleaseManifest:
     git_sha: str
     candidates: tuple[Mapping[str, Any], ...]
     tickets: tuple[Mapping[str, Any], ...] = ()
+    strategy_admission: Mapping[str, Any] | None = None
 
     def to_record(self) -> dict[str, Any]:
         if not self.release_id or not self.idempotency_key:
@@ -73,11 +74,23 @@ class ReleaseManifest:
         ):
             if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
                 raise ValueError(f"{name} must be a lowercase SHA-256")
+        if self.tickets:
+            admission = self.strategy_admission
+            if not isinstance(admission, Mapping) or admission.get("allowed") is not True:
+                raise ValueError("tickets require an allowed strategy admission")
+            evidence_sha256 = str(admission.get("evidence_sha256", ""))
+            if (
+                len(evidence_sha256) != 64
+                or any(char not in "0123456789abcdef" for char in evidence_sha256)
+            ):
+                raise ValueError("tickets require an auditable strategy evidence SHA-256")
         record = asdict(self)
         record["published_at"] = _aware_iso(self.published_at, "published_at")
         record["source_as_of"] = _aware_iso(self.source_as_of, "source_as_of")
         record["candidates"] = [dict(item) for item in self.candidates]
         record["tickets"] = [dict(item) for item in self.tickets]
+        if self.strategy_admission is not None:
+            record["strategy_admission"] = dict(self.strategy_admission)
         return record
 
 

@@ -3,6 +3,7 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
+from jingcai.model_governance import AuditApproval, ExperimentManifest
 from jingcai.pipeline import (
     build_paper_candidates,
     chinese_market_label,
@@ -10,6 +11,28 @@ from jingcai.pipeline import (
     predict_all_markets,
     walk_forward_1x2,
 )
+
+
+def governed_acceptance(competition_code: str, market: str = "match_result") -> dict[str, object]:
+    """Small valid approval fixture; production config uses the same binding shape."""
+    evidence = ExperimentManifest(
+        experiment_id=f"{competition_code.lower()}-lockbox", model_id="test-model", model_version="1.0",
+        created_at="2026-08-01T08:00:00+00:00", code_revision="test-revision",
+        dataset_manifest_sha256="a" * 64, validation_protocol="rolling-origin/v1",
+        metrics={"log_loss_improvement": 0.01}, artifact_sha256="b" * 64,
+    )
+    approval = AuditApproval.issue(
+        manifest=evidence, auditor_id="model-qa", signed_at="2026-08-01T09:00:00+00:00",
+        decision="approved", scopes=[(competition_code, market)],
+    )
+    return {
+        competition_code: {"approved": True, "markets": {market: True}},
+        "_governance": {
+            "manifests": {"lockbox": evidence.to_record()},
+            "audit_approvals": {"qa": approval.to_record()},
+            "bindings": {competition_code: {market: {"manifest_id": "lockbox", "approval_id": "qa"}}},
+        },
+    }
 
 
 def synthetic_matches(count: int = 24) -> list[dict[str, object]]:
@@ -100,6 +123,7 @@ class PipelineTests(unittest.TestCase):
             fixtures,
             safety_margin=0.03,
             prediction_time=datetime(2026, 7, 22, 11, tzinfo=UTC),
+            acceptance_config=governed_acceptance("NTL"),
         )
         self.assertEqual(1, len(candidates))
         self.assertGreater(candidates[0]["conservative_ev"], 0)
@@ -173,7 +197,7 @@ class PipelineTests(unittest.TestCase):
             synthetic_matches(), [fixture], prediction_time=datetime(2026, 7, 22, 11, tzinfo=UTC)
         ))
 
-    def test_explicitly_approved_match_result_can_pass(self) -> None:
+    def test_manual_approved_true_without_governance_cannot_pass(self) -> None:
         fixture = {
             "match_id": "m4", "competition_code": "TEST", "home_team": "A", "away_team": "B",
             "odds_as_of": "2026-07-22T10:00:00+00:00",
@@ -185,8 +209,39 @@ class PipelineTests(unittest.TestCase):
             synthetic_matches(), [fixture], acceptance_config=acceptance,
             prediction_time=datetime(2026, 7, 22, 11, tzinfo=UTC),
         )
+        self.assertEqual([], candidates)
+
+    def test_manifest_and_audit_approved_match_result_can_pass(self) -> None:
+        fixture = {
+            "match_id": "m4", "competition_code": "TEST", "home_team": "A", "away_team": "B",
+            "odds_as_of": "2026-07-22T10:00:00+00:00",
+            "sale_cutoff": "2026-07-22T12:00:00+00:00",
+            "odds": {"match_result": {"home": 10.0, "draw": 10.0, "away": 10.0}},
+        }
+        candidates = build_paper_candidates(
+            synthetic_matches(), [fixture], acceptance_config=governed_acceptance("TEST"),
+            prediction_time=datetime(2026, 7, 22, 11, tzinfo=UTC),
+        )
         self.assertEqual(1, len(candidates))
         self.assertEqual("match_result", candidates[0]["market"])
+        self.assertIsNotNone(candidates[0]["approval_manifest_sha256"])
+
+    def test_audit_with_a_different_competition_scope_cannot_pass(self) -> None:
+        fixture = {
+            "match_id": "m5", "competition_code": "TEST", "home_team": "A", "away_team": "B",
+            "odds_as_of": "2026-07-22T10:00:00+00:00",
+            "sale_cutoff": "2026-07-22T12:00:00+00:00",
+            "odds": {"match_result": {"home": 10.0, "draw": 10.0, "away": 10.0}},
+        }
+        acceptance = governed_acceptance("OTHER")
+        acceptance["TEST"] = {"approved": True, "markets": {"match_result": True}}
+        acceptance["_governance"]["bindings"]["TEST"] = {
+            "match_result": {"manifest_id": "lockbox", "approval_id": "qa"}
+        }
+        self.assertEqual([], build_paper_candidates(
+            synthetic_matches(), [fixture], acceptance_config=acceptance,
+            prediction_time=datetime(2026, 7, 22, 11, tzinfo=UTC),
+        ))
 
     def test_fixture_predictor_can_safely_cover_team_outside_local_history(self) -> None:
         fixture = {
@@ -199,7 +254,7 @@ class PipelineTests(unittest.TestCase):
         prediction = {"match_result": {"home": 0.6, "draw": 0.2, "away": 0.2}}
         candidates = build_paper_candidates(
             synthetic_matches(), [fixture],
-            acceptance_config={"UCL": {"approved": True, "markets": {"match_result": True}}},
+            acceptance_config=governed_acceptance("UCL"),
             fixture_predictor=lambda _: prediction,
             prediction_time=datetime(2026, 7, 22, 11, tzinfo=UTC),
         )

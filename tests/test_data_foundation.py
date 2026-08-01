@@ -7,7 +7,13 @@ from datetime import timedelta, timezone
 from pathlib import Path
 
 from jingcai.identity import AmbiguousMatchError, MatchNotFoundError, TeamAliases, resolve_match
-from jingcai.manifest import build_manifest, manifest_sha256, sha256_file
+from jingcai.manifest import (
+    build_dataset_manifest,
+    build_manifest,
+    manifest_sha256,
+    sha256_file,
+    validate_dataset_manifest,
+)
 from jingcai.providers.football_data import FootballDataError, load_football_data_csv
 from jingcai.providers.manual import ManualImportError, load_manual_json
 
@@ -77,6 +83,35 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(one, two)
         self.assertEqual(manifest_sha256(one), manifest_sha256(two))
         self.assertEqual(one["files"][0]["path"], "manual.json")
+
+    def test_versioned_manifest_records_provenance_and_detects_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "matches.jsonl"
+            path.write_text('{"id": 1}\n{"id": 2}\n', encoding="utf-8")
+            manifest = build_dataset_manifest(
+                [path], base_dir=root, code_revision="abc123", filters={"season": "2025/26"},
+                generated_at="2026-08-01T00:00:00Z", record_counter=lambda p: len(p.read_text(encoding="utf-8").splitlines()),
+            )
+            self.assertEqual(manifest.files[0].bytes, path.stat().st_size)
+            self.assertEqual(manifest.files[0].records, 2)
+            self.assertEqual(manifest.code_revision, "abc123")
+            validate_dataset_manifest(manifest, base_dir=root)
+            path.write_text('{"id": 1}\n{"id": 3}\n', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "input files changed"):
+                validate_dataset_manifest(manifest, base_dir=root)
+
+    def test_versioned_manifest_rejects_missing_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "matches.csv"
+            path.write_text("a\n", encoding="utf-8")
+            manifest = build_dataset_manifest(
+                [path], base_dir=root, code_revision="abc123", generated_at="2026-08-01T00:00:00Z",
+            )
+            path.unlink()
+            with self.assertRaises(FileNotFoundError):
+                validate_dataset_manifest(manifest, base_dir=root)
 
 
 if __name__ == "__main__":

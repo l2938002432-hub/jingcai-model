@@ -1,4 +1,9 @@
 {
+  "_governance": {
+    "manifests": {},
+    "audit_approvals": {},
+    "bindings": {}
+  },
   "NTL": {
     "history_division": "NOR",
     "approved": true,

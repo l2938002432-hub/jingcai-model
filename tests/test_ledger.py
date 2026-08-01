@@ -32,6 +32,21 @@ def manifest(*, release_id: str = "release-1", candidate_probability: float = 0.
 
 
 class LedgerTests(unittest.TestCase):
+    def test_release_with_tickets_requires_strategy_admission_evidence(self) -> None:
+        base = manifest()
+        with self.assertRaisesRegex(ValueError, "strategy admission"):
+            base.__class__(**{**base.__dict__, "tickets": ({"ticket_id": "t1"},)}).to_record()
+        admitted = base.__class__(**{
+            **base.__dict__,
+            "tickets": ({"ticket_id": "t1"},),
+            "strategy_admission": {
+                "allowed": True,
+                "strategy_id": "single-v1",
+                "evidence_sha256": "c" * 64,
+            },
+        }).to_record()
+        self.assertEqual("c" * 64, admitted["strategy_admission"]["evidence_sha256"])
+
     def test_freeze_release_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             ledger = Ledger(Path(directory) / "model.jsonl", LedgerKind.MODEL)
